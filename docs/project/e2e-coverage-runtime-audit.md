@@ -1,6 +1,6 @@
 # E2E coverage and runtime audit — item 146
 
-**Status: open.** This is the record of the audit's **first investigation slice**, carried out on 7 October 2026. It changes no test, no CI configuration and no production code; everything under "Proposals" is proposed only and awaits the rider's review. The item's specification is [`backlog.md#item-146`](backlog.md#item-146); the two WebKit investigations it prioritised are [item 147](backlog.md#item-147) and [item 148](backlog.md#item-148).
+**Status: open.** This is the record of the audit's **first investigation slice**, carried out on 7 October 2026. It changes no test, no CI configuration and no production code; everything under "Proposals" is proposed only and awaits the rider's review. [Section 16](#16-item-148-investigation-and-proposal-8-october-2026) records item 148's investigation and proposal (8 October 2026), likewise proposed only. The item's specification is [`backlog.md#item-146`](backlog.md#item-146); the two WebKit investigations it prioritised are [item 147](history/items-132-NN.md#item-147) and [item 148](backlog.md#item-148).
 
 Contents:
 
@@ -19,7 +19,8 @@ Contents:
 13. [Follow-up: CI run 37614828755 and its repair](#13-follow-up-ci-run-37614828755-and-its-repair)
 14. [Timing capture: the implementation (7 October 2026)](#14-timing-capture-the-implementation-7-october-2026)
 15. [Follow-up: CI run 37748819780 and its repair](#15-follow-up-ci-run-37748819780-and-its-repair)
-16. [Appendix: per-spec inventory](#16-appendix-per-spec-inventory)
+16. [Item 148: investigation and proposal (8 October 2026)](#16-item-148-investigation-and-proposal-8-october-2026)
+17. [Appendix: per-spec inventory](#17-appendix-per-spec-inventory)
 
 ---
 
@@ -84,7 +85,7 @@ Contents:
 - **Parameterisation.** 62 loops generate tests in 28 files, in four idioms: full `LANGUAGES × TEXT_SIZES` cross products; hand-picked case tables (for example `SCROLLED_CASES`); width × language grids; and loops inside a single test. Their dimensions are reviewed in [section 7](#7-matrix-review).
 - **Origin.** 23 specs first added on or after 1 October 2026 hold 568 of the cases; 27 added in September hold 318; 43 older specs hold 306. A spec counts by its first commit, so cases added later to an older spec count with that spec.
 
-The per-spec table is in [the appendix](#16-appendix-per-spec-inventory).
+The per-spec table is in [the appendix](#17-appendix-per-spec-inventory).
 
 ---
 
@@ -303,7 +304,7 @@ Its timing differs from the original by one extra page evaluation before Enter, 
 - Why the fix-up is sometimes later than re-enabling.
 - That a product change is needed. Item 135 holds the product question of a disabled control's focus. This item concerns what the assertion measures.
 
-**The repair, 8 October 2026:** focus is now compared by node identity at both comparison sites, as recorded in [item 147's entry](backlog.md#item-147).
+**The repair, 8 October 2026:** focus is now compared by node identity at both comparison sites, as recorded in [item 147's entry](history/items-132-NN.md#item-147).
 
 ### Item 148 — the paused-End confirmation scroll preconditions
 
@@ -340,6 +341,8 @@ Its timing differs from the original by one extra page evaluation before Enter, 
 **CI.** Every one of these cases passed in both supplied CI runs (16 executions, with trace on). No CI failure is recorded. These local results suggest the precondition can fail at a CI-like worker count, so it remains a possible CI failure; no rate is claimed.
 
 **No cause is attributed to item 125 or item 139.** The first occurrence predates item 125, and the second occurred on item 125's build.
+
+**The investigation and proposal, 8 October 2026:** [section 16](#16-item-148-investigation-and-proposal-8-october-2026).
 
 ---
 
@@ -744,9 +747,215 @@ A new `twoFingerTap` sends the same genuine two-contact CDP `touchStart`, the un
 - **[Item 134](history/items-132-NN.md#item-134)'s earlier observation** recorded `:460` and `:482` failing only under a harsher-than-CI local load, as an inference. It is not assumed to share this cause; this is `:482`'s first CI occurrence.
 - **No runtime difference is attributed to the JSON reporter,** which both runs used.
 
+### Deployment of the repair
+
+Run [37758419670](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37758419670), for `5c27a37`, passed every job:
+
+- Verify and build: 311 s;
+- shards 1 to 4: 689, 782, 428 and 981 s;
+- Deploy: 10 s.
+
+What it shows, and what it does not:
+
+- **The live site** then served `0.4.69` / `5c27a37`. `677a03e` remains the accepted phone build; these test-only changes need no device check.
+- **Every executed test passed, with expected skips permitted.** The run's per-test counts, and the repaired case's own result, stay unverified until its four timing reports, which exist, are inspected with authenticated access.
+- **Shard 4's 981 s is the longest shard job recorded,** 219 s under the limit; the previous longest was 967 s (§13). It is one run: neither a trend nor a cause is claimed.
+- **It completed item 147** within its approved scope ([record](history/items-132-NN.md#item-147)). Item 147's repair, `827b362`, had not deployed on its own, because run 37748819780 failed on the case above.
+- **The distinction above stands.** The contact-span mechanism is confirmed locally; that CI's contact exceeded 500 ms is inferred.
+
 ---
 
-## 16. Appendix: per-spec inventory
+## 16. Item 148: investigation and proposal (8 October 2026)
+
+**Status: investigation and proposal only.** The rider's decision of 7 October 2026 ([decision 3](#decisions-of-7-october-2026)) authorised them, and nothing more. No test, assertion, application code or CI configuration changed. The item's entry is [`backlog.md#item-148`](backlog.md#item-148), and its earlier diagnostics are in [section 8](#item-148--the-paused-end-confirmation-scroll-preconditions).
+
+**The question:** in `e2e/endRidePausedConfirmationReveal.smoke.spec.ts`, is wheel input part of the behaviour the cases protect, or does it only set up the scroll position they need?
+
+The spec, its support files and the application source are unchanged since `677a03e`. That is why the earlier diagnostics still apply.
+
+### The cases that use wheel input
+
+Eleven cases per engine issue wheel input. The spec runs in both `chromium` and `webkit-smoke`; only WebKit has failed.
+
+| Case (line)                                                                | What it protects                                                                                                                                                                                                                                            | What the wheel does                                                                                                                                                              | The wheel is             |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| The eight "scrolled" cases (`:1041`, `SCROLLED_CASES`)                     | C-11's Cancel or Escape after the rider has scrolled the open confirmation: focus returns to End ride without the browser's focus scroll, the page moves only as far as reveals End ride, the rider's position is otherwise kept, and the ride stays paused | `wheelBy` puts End ride's slot under the navigation, partly above the viewport, or wholly above it. The hard precondition at `:1081` checks it got there                         | **position setup**       |
+| "reopening after Cancel and a wheel scroll" (`:987`)                       | A second opening is measured from where End ride now is; it does not replay the first opening's movement                                                                                                                                                    | `wheelBy` moves End ride to a different position inside the band                                                                                                                 | **position setup**       |
+| Edit copy's and End ride's confirmations both open (`:1273`)               | Both close quietly when Resume ride succeeds. This is judged against a control transition made with nothing open                                                                                                                                            | `wheelBy(-5000)` returns the page to the top, where the control's Resume was pressed. `expectQuietTransition` compares the two starting positions (`rideTransitionProbe.ts:132`) | **position setup**       |
+| "Cancel during a held Pause, then the rider moves on with wheel" (`:1421`) | A rider who has moved on is given neither focus nor page movement when the held Pause lands                                                                                                                                                                 | `page.mouse.wheel(0, 120)` directly, not through `wheelBy`. The shell does not scroll; the event itself is the rider moving on                                                   | **the behaviour itself** |
+
+### The trace, in the spec
+
+1. **Setup and readiness.**
+   - `openPaused` imports the route, opens it, starts riding with a fix and pauses.
+   - `pauseRide` waits for Resume ride to be visible, the sticky navigation to be attached, and `settle`.
+   - The case then checks that End ride is enabled and sets the root text size (a 150 ms wait, then `settle`).
+2. **The opening.** `openEndRide` clicks End ride at its measured centre and waits for the confirmation to be visible. It then settles and snapshots.
+3. **The wheel** (`wheelBy`, `:489`).
+   - It scans `elementFromPoint(6, y)` upward from 30 px above the bottom for a point outside the map and the header.
+   - It moves the mouse there, sends one `mouse.wheel(0, dy)`, and calls `settle()`.
+   - The scrolled cases compute `dy` from the open confirmation's top and the slot each case requires.
+4. **The settle** (`:349`) resolves once `scrollY` has held still for 300 ms, sampled by timers, or after 5 s.
+   - The 300 ms is counted from the settle's own start.
+   - So **it cannot tell a scroll that has not yet begun from one that has finished**: if nothing has moved 300 ms after the wheel, it resolves.
+   - That is a negative readiness condition, the same kind of trap as the `toBeHidden()` check recorded for item 32 and in [section 13](#13-follow-up-ci-run-37614828755-and-its-repair).
+5. **The assertions.**
+   - The `placed` note, then the hard precondition: "wheel input put End ride's slot …" (`:1081`).
+   - "Cancel kept focus while the page scrolled".
+   - Then Cancel or Escape, `expectFocusReturn` and `expectStillPaused`.
+
+### What the application does with the wheel, from source
+
+- **During the setup-only wheels, nothing in the application listens for wheel input.**
+  - **C-11's guard.** `handleEndRideCancel` records a Cancel with `guard: null` (`RidingScreen.tsx:1243`). The guard is armed only when the focus return has to wait (`:1765`): the confirmation still open, End ride absent or disabled, or the navigation not yet back. An ordinary Cancel is decided in its own closing commit, so nothing is armed while the scrolled cases' wheel is sent, which is in any case before the Cancel.
+  - **Edit copy's guard** is armed only when an attempt begins (`:1250`), after confirmation. In the `:1273` case, Edit copy's confirmation is open but unconfirmed.
+  - **The scroll-memory guard** (`screenScrollMemory.ts`) ends when its arrival restore has been decided. Its loop, and the reset loop in `scrollToTopAndSettle.ts`, also end at the first `pointerdown`, and End ride's opening is a click.
+  - **The Planning, Route Library and Status guards** are not mounted on this screen.
+- **The application has no `scroll` listener** anywhere in `src/`.
+- **The opening and Cancel rules read only geometry**, at the commit that decides them (`RidingScreen.tsx:1705–1790`). How the page got where it is never enters the decision.
+- **In the held-Pause case, the wheel is the input C-11's guard listens for.** `operationInteractionGuard.ts` disarms on any `wheel` (`ALWAYS_MOVED_ON`) in a capture-phase, passive listener on `window`. That needs the event to be dispatched, not a scroll.
+
+### Existing evidence, reused rather than re-run
+
+- **Section 8's D2a–D2c.** Every failure left the confirmation exactly where it opened. In D2b and D2c's twelve instrumented failures, the document received one wheel event, on `SECTION.screen`, and no `scroll` followed within the settle.
+- **Re-read for this item:**
+  - **The wheel's arrival time does not separate passes from failures.** Measured from the probe's own start, the event arrived 304–1,592 ms later in failures, and 33–2,601 ms later in passes.
+  - **D2b read `defaultPrevented` in the capture phase only**, before the target's own listeners. So cancellation after dispatch had not been measured.
+- **CI run 37638928929's timing reports** (section 14), read from the external audit folder:
+  - all eleven cases passed in both engines;
+  - every scrolled case's `placed` note was exactly on its target: 35, 51 and 82 px under the navigation, −20 px partly above, and −84 and −102 px wholly above;
+  - the reopening note reads "first moved 535.0 px, second 37.0 px" in both engines.
+
+### New measurements, 8 October 2026
+
+**Common conditions:**
+
+- the CI image by digest;
+- `CI=1`, `--workers=2`, `--cpus=4`, the `webkit-smoke` project only;
+- the eleven cases above, each run 5 times;
+- the existing build, bundle `index-Df45j2uq.js`, source-equivalent to the head's application;
+- each run in its own directory in the external audit folder's `item148/`, with its full log, JSON report and failure artefacts.
+
+The selection was listed first and held exactly the eleven cases. The 4-CPU cap repeats D2c's condition; together with the local host, it means **none of these runs is CI-equivalent**.
+
+**The instrumented copy** was generated outside the repository and kept deliberately light. It differs from the spec only as follows:
+
+- **Logging.** One added init script records:
+  - `wheel` events: target, `cancelable`, and `defaultPrevented` in the capture phase and again after dispatch has ended;
+  - `scroll` events, for the document and for any element;
+  - `pointerdown` and `keydown` markers.
+
+  All its listeners are capture-phase and passive. There is no listener registry, and no scroll call is intercepted beyond the spec's own fixture records.
+
+- **Before the wheel**, `wheelBy` also reads:
+  - the position, the scrollable range, the requested delta and the clamped target;
+  - the element under the wheel point, and any nested scroll container among its ancestors.
+- **At the original settle boundary**, one read records the position, each dialog's top, the fixture's existing scroll-call records and the log so far. It classifies the wheel as **moved**, **not required** or **required but absent**. The case then continues exactly as the spec does, so **its pass or failure is the spec's own verdict**.
+- **Only after a required-but-absent wheel**, a `test.afterEach` keeps observing. That is, after the case's own verdict. It waits by timers until 3.3 s after the wheel, then requests one animation frame and records the order of events.
+
+| Run | Copy         | Trace                                                                             | Effective workers (banner and report) | Result                                             | Setup wheels with required movement absent at the boundary |
+| --- | ------------ | --------------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------- |
+| U1  | unmodified   | recorded for every test, as `CI=1` configures                                     | 2                                     | 55 passed                                          | not instrumented; all 40 scrolled `placed` notes on target |
+| I1  | instrumented | recorded for every test, as `CI=1` configures                                     | 2                                     | 55 passed                                          | 0 of 50                                                    |
+| I2  | instrumented | `--trace off`, the one change from I1: a controlled comparison, not CI-equivalent | 2                                     | 48 passed; 7 failed at the spec's own precondition | 7 of 50                                                    |
+
+I2 ran because I1 captured no required-but-absent wheel. Trace was the one remaining condition by which the earlier reproducing batches, D2a–D2c, all trace off, differed. No further run was made.
+
+### What the measurements show
+
+1. **Every setup wheel reached the page and was never cancelled.** All 100 instrumented setup wheels were delivered once, to `SECTION.screen`, and were cancelable. None was cancelled, in the capture phase or after dispatch. There was no nested scroll container, the document had focus and was visible, and no element scrolled.
+2. **When the page moved by the boundary** (93 of 100), it moved to exactly the clamped target. The first document `scroll` event came 2–204 ms after the wheel event.
+3. **The seven required-but-absent wheels** were all in I2. Each was in a scrolled case: four under the navigation at en/200 %, one at de/200 %, one partly above at en/100 % and one wholly above at en/200 %.
+   - **At the boundary:** `scrollY` was unchanged, no `scroll` event had arrived, and the fixture's records held no application scroll call besides the opening's own reveal, where there was one.
+   - **The verdict was the spec's own:** each failed at "wheel input put End ride's slot …".
+   - **Afterwards, in each of the seven:**
+     - exactly one document `scroll` event arrived, to exactly the clamped target. It came 0.80–2.00 s after the boundary and 1.28–2.39 s after the wheel event;
+     - no input was recorded in between, and it arrived before the probe's frame request. The frame then ran within 16–90 ms, and no further scroll followed.
+   - **Playwright's own failure handling fell in that interval.** The test function had already ended, its precondition failing, and in all seven Playwright's failure screenshot was written within about 0.3 s of the scroll's estimated time.
+     - The estimate aligns file times with the page's own clock, and fixture teardown is unmeasured.
+     - The boundary-to-scroll interval varied from 0.8 to 2.0 s, and the screenshot's timing followed it each time.
+     - The two screenshots inspected show the confirmation where it opened, before the wheel.
+
+   **So the wheel's scroll was not lost; it was applied late.** It is not established whether it would have arrived without that capture, or when.
+
+4. **Tracing is associated with the outcome; no mechanism is shown.**
+   - With a trace recorded for every test, as CI records it, 0 of 110 runs failed (U1 and I1), and none of I1's 50 setup wheels was missing at the boundary.
+   - With trace off, 7 of 50 were missing. The earlier reproducing batches were also trace off, and CI has never failed these cases.
+   - These are few runs. The association suggests CI's exposure is lower than the trace-off rate, but no CI rate is claimed: the failure remains possible in CI.
+5. **A position set by script takes effect at once.** In one I2 pass, the opening's own instant `scrollBy` had already moved `scrollY` when the probe read it, while that scroll's `scroll` event arrived 800 ms later, still before the wheel. That is, a script-made position did not wait for the event.
+6. **The held-Pause wheel is the behaviour, and it worked every time.**
+   - Its wheel was delivered in all ten instrumented runs, under both trace settings, and the case passed each time.
+   - The element under the pointer varied:
+     - the map canvas in seven runs, where the event was cancelled after dispatch, by a listener the probe did not identify (the application's own wheel listeners are all passive);
+     - the status card's row in three runs, where it was not cancelled.
+   - What it protects needs the event's dispatch, which C-11's guard sees in the capture phase on `window`. It does not need a scroll.
+
+### The answer
+
+- **In ten of the eleven cases, the wheel only prepares the scroll position.** These are the eight scrolled cases, the reopening case and the Edit copy case.
+  - The application never observes how the page got there.
+  - Nothing cancelled the wheel, and no application scroll followed it.
+  - Each case's own precondition or comparison checks the position it needs.
+- **In the held-Pause case, the wheel is the behaviour under test**, and it does not depend on scrolling.
+
+### Remaining uncertainty
+
+- Why headless WebKit sometimes applies a wheel's scroll late.
+- Whether that scroll would arrive without Playwright's failure capture, and when.
+- Whether trace recording affects it.
+- The first occurrence's form, its artefacts having been overwritten.
+- Any rate in CI.
+- U1 is this slice's only unmodified run. No unmodified trace-off run was made here; section 8's D2a, at 36 workers, was one.
+
+### Proposal — not implemented
+
+**The recommended correction (B), test-only:** in the ten setup-only cases, set the position directly instead of by wheel.
+
+- **The mechanism.** Add one helper beside `wheelBy`, used at the ten sites. It sets `document.scrollingElement.scrollTop` from the current position plus the requested delta, then keeps the unchanged `settle()`.
+  - The fixture's application-scroll recorder wraps only `window.scrollBy`, `window.scrollTo` and `scrollIntoView`, so this step is never counted as the application's own.
+  - The application has no CSS `scroll-behavior`, so the change is instant.
+  - Finding 5 shows a script-made position takes effect at once.
+- **Unchanged:** every precondition — "… put End ride's slot …", "Cancel kept focus while the page scrolled", the reopening comparison and the transition's start-position comparison — and every behaviour assertion.
+- **Labelling.** The spec header says input is real except where labelled synthetic. It gains this step, and each site is labelled.
+- **The reopening case's title** names "a wheel scroll" and would be reworded. Its identity in timing comparisons changes, and that would be recorded.
+- **What it gives up:** the browser's own wheel scrolling in these ten cases. That is browser behaviour, not the application's. "Cancel kept focus while the page scrolled" would no longer be evidence about wheel input specifically. **No application path is lost**: the application never sees how the position was produced. Chromium runs the same spec, and the change applies to both engines.
+
+**Not recommended:**
+
+- **(A), keeping the wheel and waiting positively for its target.** That would replace the negative settle with a wait for `scrollY` to reach the clamped target. It is valid only if the late scroll arrives on its own, which these runs did not establish: every late scroll coincided with Playwright's failure capture.
+- **Re-sending the wheel** would hide the very non-scroll it met.
+- **Requesting frames or depending on trace settings** would rest the setup on an unestablished mechanism.
+
+**Genuine input that must remain:**
+
+- the held-Pause case's `page.mouse.wheel`, which is the behaviour;
+- every pointer click on End ride, Cancel, Resume ride, Pause and Edit copy;
+- Escape, and Enter on the keyboard opening path.
+
+Other specs' wheel input is outside this item: 16 files use `mouse.wheel`. It is a pointer for item 146's concluding review only, unexamined here. The Android timestamp repair is not extended to `doubleTap`, and no retry, timeout, trace or application change is proposed.
+
+**Focused verification for a later implementation**, in the CI image by digest with `CI=1` and 2 workers:
+
+- the ten changed cases ×5 in WebKit with `--trace off`, the condition that reproduced here, and ×5 with CI's trace setting. Passing runs there are regression evidence, not proof: the reliability claim rests on finding 5;
+- once in Chromium;
+- the held-Pause case ×5 in WebKit;
+- the complete spec once in both engines;
+- typecheck, lint, then formatting.
+
+**Negative controls**, from copies outside the repository, once each in WebKit:
+
+1. **The new positioning made a no-op** must fail at the unchanged preconditions and comparisons. This shows they still guard the setup.
+2. **An injected C-11 regression** — on End ride's return focus, scrolling back to where the page was before the confirmation opened — must fail at "the position was kept until the focus return" or "moved … warrants …". This shows the cases still detect a lost position after a script-made one.
+3. **The held-Pause case without its wheel** must fail at "End ride did not take focus". This shows the retained wheel is load-bearing.
+
+**Decisions for the rider:**
+
+1. Approve, amend or decline (B) as item 148's implementation slice.
+2. If (A) is preferred instead, a bounded diagnostic would come first. It would repeat I2 with failure screenshots off, to see whether the late scroll arrives with no capture.
+
+---
+
+## 17. Appendix: per-spec inventory
 
 Cases are listed Chromium/WebKit/Android, from `--list` at `7cc9e55`; WebKit counts include the 5 skipped cases. "CI Σ s" is the summed reported duration in run 37602138083, excluding skipped cases; it is a concurrent sum, not wall-clock. "CI max s" is the slowest case. "Fixed waits" counts `page.waitForTimeout` calls in the source. "Added" is the spec's first commit.
 

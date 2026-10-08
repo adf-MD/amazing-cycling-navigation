@@ -630,7 +630,7 @@ _Category: Riding presentation_
 
 <a id="item-146"></a>
 
-## Item 146 — E2E coverage and runtime audit (investigation; its concluding review third in the approved order)
+## Item 146 — E2E coverage and runtime audit (investigation; its concluding review second in the approved order)
 
 _Category: End-to-end test suite_
 
@@ -646,9 +646,9 @@ _Category: End-to-end test suite_
        - runtime from existing CI logs, reports and metadata first, compared across several runs, separating test execution from installation, build and other job overhead, test counts from duration, repeatable expensive work from runner variability, and waits genuinely needed to prove behaviour from unnecessary settling;
        - the worker and sharding configuration, without assuming that more workers help software-rendered map tests;
        - fixed waits reviewed individually — autosave observation windows, debounce guards and genuine-touch pacing keep their evidential purpose — and matrix expansion reviewed selectively: German wrapping, enlarged text and WebKit focus behaviour may justify separate cases, pure logic may not need every combination;
-       - focused diagnostics in the pinned CI image where necessary, prioritising [item 147](#item-147) and [item 148](#item-148) without implementing their fixes, reusing the existing repetition evidence and preserving failure artefacts in separate output directories before any rerun.
+       - focused diagnostics in the pinned CI image where necessary, prioritising [item 147](history/items-132-NN.md#item-147) and [item 148](#item-148) without implementing their fixes, reusing the existing repetition evidence and preserving failure artefacts in separate output directories before any rerun.
      - **Output:** a linked audit report — the coverage inventory, the available runtime measurements and their limits, prioritised findings, a small proposed first implementation slice with the coverage and CI guarantees it preserves, and whether additional shards are warranted. **The item stays open** while further evidence or approved implementation is needed, and completed investigation is kept distinct from proposed change.
-     - **Context:** [item 133](history/items-132-NN.md#item-133)'s four shards; the shard durations under "Monitored, corroborating only" in [`current-status.md`](current-status.md). [Item 130](#item-130), [item 147](#item-147) and [item 148](#item-148) are separate investigations: the audit may prioritise diagnostics for 147 and 148, but neither absorbs nor fixes them.
+     - **Context:** [item 133](history/items-132-NN.md#item-133)'s four shards; the shard durations under "Monitored, corroborating only" in [`current-status.md`](current-status.md). [Item 130](#item-130), [item 147](history/items-132-NN.md#item-147) and [item 148](#item-148) are separate investigations: the audit may prioritise diagnostics for 147 and 148, but neither absorbs nor fixes them.
      - **Related standard, from the same decision:** a new browser test states briefly its distinct purpose, why it needs browser execution and any relevant overlap with existing coverage (the root [`CLAUDE.md`](../../CLAUDE.md)'s Engineering standards).
      - **First investigation slice, 7 October 2026 — reported; nothing implemented** ([report](e2e-coverage-runtime-audit.md)). Measured from per-test durations in the rider-supplied logs of CI runs 37602138083 and 37499907118, cross-checked row by row against the raw logs, and from focused diagnostics in the CI image by digest. Its findings, each a candidate rather than a decision:
        - **No shard change is warranted now.** The longest shard job at head took 806 s, 394 s under the limit; the longest recorded took 967 s (shard 4 of run 37614828755). Each shard spends about 50–60 s before its tests start. Count-based sharding leaves the mixed shard 3 shorter than the others.
@@ -665,7 +665,7 @@ _Category: End-to-end test suite_
      - **Run 37622132469, 7 October 2026:** it deployed `49547aa` with every job passing — Verify and build 249 s; shards 633, 893, 561 and 763 s; Deploy 10 s. The live site served `0.4.69` / `49547aa`. One run: no trend is claimed. `677a03e` remains the accepted phone build; these test and CI changes need no device check.
      - **Decisions, 7 October 2026, by the rider** ([report](e2e-coverage-runtime-audit.md#decisions-of-7-october-2026)):
        1. **Timing capture is approved.** Playwright's built-in JSON reporter runs alongside `list`, with separate per-shard artefacts uploaded on successful runs and ordinary test failures, kept for 7 days. Selected baseline reports are kept in the external audit folder for longer comparisons. **Retrieving them still needs authenticated GitHub access**; the benefit is consistent, machine-readable evidence without parsing console logs.
-       2. **[Item 147](#item-147)'s focused assertion repair** is scheduled after timing capture.
+       2. **[Item 147](history/items-132-NN.md#item-147)'s focused assertion repair** is scheduled after timing capture.
        3. **[Item 148](#item-148)'s bounded investigation and proposal** is scheduled after item 147. It authorises investigation and a proposal, not implementation.
        4. **The landscape end-to-end checks are kept for now.** Portrait remains the only supported and acceptance-tested orientation. The audit's roughly 38 s covers whole cases, not removable landscape cost. Any later retirement must first move unique coverage, including the 200 % warning-compaction assertion, to portrait. No landscape test changes in this slice.
      - **The sequence:** item 146's timing capture → item 147's assertion repair → item 148's bounded investigation and proposal → item 146's concluding review and dispositions → item 103 → item 120. Item 145 stays unscheduled, with its rider-review checkpoint before item 103 starts. Persistence across app closure stays deferred. The other audit candidates stay candidates, not prerequisites for item 103.
@@ -701,62 +701,16 @@ _Category: End-to-end test suite_
        - **The repair:** explicit CDP timestamps, 40 ms apart, for the two-finger tap only.
        - **Verification:** the case ×5 and the complete spec passed; the overlong-contact and zoom-prevented controls both failed at the second zoom poll.
        - **The failing run's timing upload is now observed and verified from its contents,** which closes that gap. Still open: the reporter's own cost and early termination.
-
----
-
-<a id="item-147"></a>
-
-## Item 147 — Status connection-result Enter/focus check (first in the order — assertion repair implemented; CI verification pending)
-
-_Category: End-to-end test reliability_
-
-147. **Status connection-result Enter/focus check — unscheduled test-reliability investigation**
-     - **Origin:** recorded on 7 October 2026, during item 125's verification, as an unnumbered observation in [`current-status.md`](current-status.md), and promoted to this number the same day by the rider's decision. **Automated evidence only**, from local runs in the pinned Playwright container; not an installed-iPhone observation.
-     - **Unscheduled, and not part of the approved execution order.** It is linked to [item 146](#item-146), the E2E audit, which may prioritise diagnostics for it but does not fix it. No change to the test, its assertion or production code is approved by this entry.
-     - **The test, exactly:** project `webkit-smoke`, `e2e/statusConnectionResultReveal.smoke.spec.ts:953`, "the result line revealed while the rider waits › Enter on the focused button: revealed, with focus left where it was".
-     - **The rates:** repeated 60 times on its own in the CI image, it failed **20 of 60 on item 125's build** and **18 of 60 on a build source-equivalent to `0.4.68`**.
-     - **What the assertion compares:** the focused element's _text_. Its snapshot records `body`, or the focused element's tag with its `aria-label` or the first 30 characters of its text, and the button's label changes from "Testing…" while it runs to "Test routing connection" afterwards. **A mismatch does not by itself show that focus moved**, and this entry does not infer actual focus loss from that text comparison.
-     - **Not established:** the cause. The spec's own comment records Linux WebKit's deferred focus fixup after the button is disabled; that is recorded browser behaviour, not a demonstrated cause.
-     - **CI:** no CI failure of this case is recorded.
-     - **Not [item 130](#item-130)**, which concerns a different spec and assertion.
-     - **Related:** [item 135](#item-135) records the product question — **Test routing connection** is disabled while it runs, so it loses focus. This item concerns what the test's assertion measures and imports nothing from item 135.
-     - **Diagnostics from item 146's first slice, 7 October 2026** ([report](e2e-coverage-runtime-audit.md#8-focused-diagnostics-items-147-and-148)). The 60-repeat rates were reused, not re-measured. An instrumented copy, outside the repository, recorded the focused element's node identity, focus events and the button's disabled and text changes:
-       - **30 repeats (30 tests on 30 workers): 3 failed.** In all three, the focused element at both snapshots was the same button node, no `focusout` was logged, and the button had been re-enabled and relabelled — so the text comparison failed while focus stayed where it was. In passes, a `focusout` from the disabled button, Linux WebKit's deferred fix-up, landed before the re-enable, or focus was already on `body`.
-       - **A controlled comparison, not CI-equivalent (2 workers, `--cpus=4`, trace off): 0 of 30 failed.**
-       - **The case passed in both supplied CI runs.** Not established: that the uninstrumented 60-repeat failures had the same form, or why the fix-up sometimes lands after the re-enable. No change is approved.
-     - **Scheduled, 7 October 2026, by the rider's decision:** a focused assertion repair, second in the order after [item 146](#item-146)'s timing capture.
-       - Compare actual element identity, not the changing label text.
-       - Keep the test's existing allowed focus behaviour when the button is disabled.
-       - Show that an unexpected move to another control still fails.
-       - The observed instrumented failures justify repairing what the assertion measures. They do not explain the underlying WebKit timing, or every earlier failure.
-       - No product focus-policy change, and no expansion into [item 135](#item-135).
-     - **Repair, 8 October 2026 — implemented, test-only; CI verification pending.** No application, version, workflow, timeout or retry change.
-       - **Both comparison sites:** the Enter case and the shared waiting-result checks of the seven "with the button low on Status" cases, in Chromium and WebKit. Each compared the focused element's text description at its before-snapshot with the one after the reveal.
-       - **Now:** the read that takes the existing before-snapshot also keeps, in the page, a reference to the focused element (none for `<body>`). The after-snapshot's own read reports whether focus is on `<body>` or on that very node. Allowed: that same node, whatever its label now reads, or `<body>`. A `<body>` before followed by the re-enabled button after still fails, and so does any other node, whatever its text.
-       - **Unchanged:** every tap, Enter, click, wheel and Tab; the snapshot timing; the result geometry; the scroll-call assertions; the result line not taking focus; the label checks. `active` remains a readable description, used in failure messages, the attached diagnostics (now also `focusBefore` and `focus`) and one deliberately retained static-label check, "focus stays where it was moved" (`BUTTON:Settings`). That label never changes, so this item's mechanism cannot affect it; its description would also match the primary navigation's Settings button, which is noted, not changed.
-       - **Verification**, in the CI image by digest, `CI=1`, 2 workers, outputs kept outside the repository: the selection listed exactly the 2 Enter and 14 shared-check cases. The Enter case ×5 per engine passed 10 of 10. The complete spec, once in both engines, passed 47 with 1 skipped (the Chromium-only mouse case). Every focus outcome recorded was `<body>` at both snapshots.
-       - **Temporary negative controls**, outside the repository, once per comparison site and engine. After the reveal had come to rest, each moved focus with `preventScroll`, so the scroll position and range stayed unchanged and every earlier assertion passed. All 12 failed at the repaired focus assertion:
-         - the switcher's Settings button: "moved to BUTTON:Settings";
-         - the re-enabled test button after a `<body>` before;
-         - a fixed-position clone of the test button reading its current text.
-       - **Directly exercised:** `<body>` → `<body>` accepted; an unrelated control, a re-enabled button after `<body>`, and a node with the button's text all rejected.
-       - **Not exercised here:** the same-node acceptance, a button → `<body>` transition, and a different node matching an element's before-text. `<body>` was already focused at every before-snapshot, and repetitions were not increased to reach them.
-       - **Supported only by the preserved instrumentation:** the same button node focused at both snapshots with its label changed (the three failures above), and the button → `<body>` transition.
-       - **Not established:** WebKit's focus fix-up timing, and the form of the uninstrumented 60-repeat failures. No product focus policy is decided, and nothing from [item 135](#item-135) is imported.
-       - **CI run 37748819780, on `827b362`:** all 24 Chromium cases of this spec passed, Enter included. The run failed on an Android gesture case outside the changed spec, whose test-side mechanism was confirmed locally and repaired test-only ([record](e2e-coverage-runtime-audit.md#15-follow-up-ci-run-37748819780-and-its-repair)). Delivery stays pending until a green run.
-
-**The observation as recorded in `current-status.md`, moved here unchanged on 7 October 2026:**
-
-- **A WebKit focus check in `statusConnectionResultReveal.smoke.spec.ts` fails often under repetition, on the baseline too (7 October 2026).**
-  - **The case:** "Enter on the focused button: revealed, with focus left where it was" compares the focused element by its text. Twice it failed in combined local runs on item 125's build: the button was still focused once re-enabled, reading "Test routing connection", while the earlier snapshot had it focused as "Testing…".
-  - **The rates:** repeated 60 times on its own in the CI image, it failed **20 of 60 on item 125's build and 18 of 60 on a build source-equivalent to `0.4.68`**, in the identical way. The spec's own comment records Linux WebKit's deferred focus fix-up after the button is disabled.
-  - **What follows from that:** the failure is not attributed to item 125, and it is not changed here. No CI failure of it is recorded. No item number is allocated; whether it warrants one is the rider's decision.
+     - **Run 37758419670, 8 October 2026:** it deployed `5c27a37` with every job passing — Verify and build 311 s; shards 689, 782, 428 and 981 s; Deploy 10 s. The live site served `0.4.69` / `5c27a37`; `677a03e` remains the accepted phone build.
+       - Every executed test passed, with expected skips permitted. The run's per-test counts stay unverified until its four timing reports, which exist, are inspected.
+       - Shard 4's 981 s is the longest shard job recorded, 219 s under the limit. One run: neither a trend nor a cause is claimed.
+       - It completed [item 147](history/items-132-NN.md#item-147) within its approved scope. The order is now item 148's investigation and proposal → this item's concluding review → item 103 → item 120 ([order](../../CLAUDE.md)).
 
 ---
 
 <a id="item-148"></a>
 
-## Item 148 — Paused-End confirmation scroll preconditions (scheduled second — bounded investigation and proposal)
+## Item 148 — Paused-End confirmation scroll preconditions (first in the order — investigated; proposal awaiting the rider's review)
 
 _Category: End-to-end test reliability_
 
@@ -775,11 +729,26 @@ _Category: End-to-end test reliability_
        - **The same at 2 workers with `--cpus=4`, a controlled comparison, not CI-equivalent: 6 of 40 failed, all in that pattern** — so high concurrency is not required for reproduction; a load contribution remains unestablished.
        - **All eight cases passed in both supplied CI runs.**
        - **Not established:** a cause; whether WebKit would have scrolled after the settle window; whether the first occurrence had the same form. Nothing is attributed to item 125 or 139, and no change is approved.
-     - **Scheduled, 7 October 2026, by the rider's decision:** a bounded investigation and proposal, third in the order, after [item 147](#item-147).
+     - **Scheduled, 7 October 2026, by the rider's decision:** a bounded investigation and proposal, third in the order, after [item 147](history/items-132-NN.md#item-147).
        - Establish whether wheel input is part of the behaviour these cases protect, or only prepares their scroll position.
        - Deliver a bounded proposal before changing their setup or assertions.
        - High concurrency is not required for reproduction; any load contribution remains unestablished.
        - The scheduling authorises investigation and a proposal, not implementation.
+     - **Investigation and proposal, 8 October 2026 — reported; nothing implemented** ([report](e2e-coverage-runtime-audit.md#16-item-148-investigation-and-proposal-8-october-2026)). No test, assertion, application or CI change.
+       - **The answer, from source and measurement.** In ten of the spec's eleven wheel-using cases — the eight scrolled cases, the reopening case and the Edit copy case — the wheel only prepares the scroll position. The application never observes how the page got there, and each case's own precondition or comparison checks the position. In "Cancel during a held Pause, then the rider moves on with wheel", the wheel is the behaviour: C-11's guard disarms on the event, and no scroll is needed.
+       - **The trace.** The spec's `settle()` resolves once nothing has moved for 300 ms, counted from its own start, so a scroll that has not yet begun reads as settled.
+       - **The runs.** All were in the CI image by digest, with `CI=1`, 2 workers (by banner and report) and 4 CPUs, in WebKit, with the eleven cases ×5 each.
+         - **U1, unmodified, trace recorded as `CI=1` configures:** 55 passed.
+         - **I1, a light instrumented copy:** 55 passed.
+         - **I2, the same with `--trace off`** — a controlled comparison, not CI-equivalent: 7 failed at the spec's own precondition.
+       - **Confirmed.** All 100 instrumented setup wheels were delivered to `SECTION.screen` and none was cancelled, before or after dispatch. No application scroll call followed. Where the page had moved by the settle (93 of 100), it was exactly on target.
+       - **In the seven failures,** exactly one later scroll reached the target, 1.28–2.39 s after the wheel, with no input in between. It came about when Playwright wrote its failure screenshot, which shows the pre-wheel position. The scroll was late, not lost.
+       - **Not established:** why, whether it would arrive without that capture, whether tracing affects it (traces were associated with no failures), the first occurrence's form, and any CI rate.
+       - **Proposed — recommended (B):** in the ten setup-only cases, set the position directly through `document.scrollingElement.scrollTop`, labelled synthetic, and keep every precondition and behaviour assertion.
+         - The held-Pause case keeps its genuine wheel, and every pointer and key input stays.
+         - Waiting positively for the wheel's target (A) is not recommended unless a further diagnostic shows the late scroll arrives with no capture.
+         - The report gives the focused verification and three negative controls for a later implementation.
+       - **Awaiting the rider's decision;** nothing of it is implemented.
 
 **The observation as recorded in `current-status.md`, moved here unchanged on 7 October 2026:**
 

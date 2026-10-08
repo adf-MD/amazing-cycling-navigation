@@ -1,6 +1,6 @@
 # Completed backlog items 132–
 
-This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention. Item 134 — implemented in `0.4.67` on 6 October 2026 and accepted on the installed iPhone the same day — moved here from `backlog.md` on that day, under the same convention. Item 139 — implemented in `0.4.68` on 6 October 2026 and accepted on the installed iPhone, reported 7 October 2026 — moved here from `backlog.md` on 6 October 2026, under the same convention, and is filed between items 134 and 140 in numeric order. Item 140 — completed in two slices, `0.4.65` and `0.4.66`, both accepted on the installed iPhone on 6 October 2026 — moved here from `backlog.md` on that day under the same convention and is filed before item 141, in numeric order, although item 141 was completed first.
+This file continues the 100– numeric range and opens at item 132. It was started when item 132 was completed (2 October 2026, `0.4.55`). Its entry belongs before item 133's in numeric order, and adding it to what was then `items-118-NN.md` would have taken that file to about 176,000 characters, past the ~150,000-character soft cap documented in [`README.md`](README.md). That file was therefore closed at item 131 and renamed [`items-118-131.md`](items-118-131.md), and item 133's entry — completed earlier the same day as a CI-only change — moved here unchanged apart from its link to item 132, which now points within this file. No entry was shortened or rewritten by that split. Stable item numbers never change regardless of which file their text lives in: item 133 was completed before item 132 and is filed after it, since a number is an identifier and never a schedule. Item 141 — completed in `0.4.63` on 5 October 2026 and accepted on the installed iPhone the same day — follows them, moved from `backlog.md` under the same convention. Item 134 — implemented in `0.4.67` on 6 October 2026 and accepted on the installed iPhone the same day — moved here from `backlog.md` on that day, under the same convention. Item 139 — implemented in `0.4.68` on 6 October 2026 and accepted on the installed iPhone, reported 7 October 2026 — moved here from `backlog.md` on 6 October 2026, under the same convention, and is filed between items 134 and 140 in numeric order. Item 140 — completed in two slices, `0.4.65` and `0.4.66`, both accepted on the installed iPhone on 6 October 2026 — moved here from `backlog.md` on that day under the same convention and is filed before item 141, in numeric order, although item 141 was completed first. Item 147 — a test-only assertion repair, verified in CI on 8 October 2026 and needing no device check — moved here from `backlog.md` that day, under the same convention, and follows item 141.
 
 See [`README.md`](README.md) for the full history index, [`../backlog.md`](../backlog.md) for pending specifications, and [`../current-status.md`](../current-status.md) for the manual acceptance ledger.
 
@@ -1013,3 +1013,76 @@ The live site then served `0.4.63` with build `a474254`, and the previous build,
 - **Item 135's focus limitation** is unchanged.
 
 Item 122's implementation follows.
+
+---
+
+<a id="item-147"></a>
+
+## Item 147 — Status connection-result Enter/focus check — done
+
+_Category: End-to-end test reliability_
+
+**Status: done — CI verified on 8 October 2026, in run 37758419670, which deployed `5c27a37`; complete within its approved scope, the focused assertion repair** ([CI verification](#ci-verification--run-37758419670-8-october-2026)). It is test-only: no application, version, workflow, timeout or retry change, and no device check. The entry moved here from `backlog.md` on 8 October 2026, as item 133's did. Item 147 stayed first in the execution order until a green run; it is now removed from the order, which is 148 → 146's concluding review → 103 → 120 (root [`CLAUDE.md`](../../../CLAUDE.md)). The text below is as it stood in `backlog.md`, with its links adjusted for this file; the CI verification follows it.
+
+147. **Status connection-result Enter/focus check — unscheduled test-reliability investigation**
+     - **Origin:** recorded on 7 October 2026, during item 125's verification, as an unnumbered observation in [`current-status.md`](../current-status.md), and promoted to this number the same day by the rider's decision. **Automated evidence only**, from local runs in the pinned Playwright container; not an installed-iPhone observation.
+     - **Unscheduled, and not part of the approved execution order.** It is linked to [item 146](../backlog.md#item-146), the E2E audit, which may prioritise diagnostics for it but does not fix it. No change to the test, its assertion or production code is approved by this entry.
+     - **The test, exactly:** project `webkit-smoke`, `e2e/statusConnectionResultReveal.smoke.spec.ts:953`, "the result line revealed while the rider waits › Enter on the focused button: revealed, with focus left where it was".
+     - **The rates:** repeated 60 times on its own in the CI image, it failed **20 of 60 on item 125's build** and **18 of 60 on a build source-equivalent to `0.4.68`**.
+     - **What the assertion compares:** the focused element's _text_. Its snapshot records `body`, or the focused element's tag with its `aria-label` or the first 30 characters of its text, and the button's label changes from "Testing…" while it runs to "Test routing connection" afterwards. **A mismatch does not by itself show that focus moved**, and this entry does not infer actual focus loss from that text comparison.
+     - **Not established:** the cause. The spec's own comment records Linux WebKit's deferred focus fixup after the button is disabled; that is recorded browser behaviour, not a demonstrated cause.
+     - **CI:** no CI failure of this case is recorded.
+     - **Not [item 130](../backlog.md#item-130)**, which concerns a different spec and assertion.
+     - **Related:** [item 135](../backlog.md#item-135) records the product question — **Test routing connection** is disabled while it runs, so it loses focus. This item concerns what the test's assertion measures and imports nothing from item 135.
+     - **Diagnostics from item 146's first slice, 7 October 2026** ([report](../e2e-coverage-runtime-audit.md#8-focused-diagnostics-items-147-and-148)). The 60-repeat rates were reused, not re-measured. An instrumented copy, outside the repository, recorded the focused element's node identity, focus events and the button's disabled and text changes:
+       - **30 repeats (30 tests on 30 workers): 3 failed.** In all three, the focused element at both snapshots was the same button node, no `focusout` was logged, and the button had been re-enabled and relabelled — so the text comparison failed while focus stayed where it was. In passes, a `focusout` from the disabled button, Linux WebKit's deferred fix-up, landed before the re-enable, or focus was already on `body`.
+       - **A controlled comparison, not CI-equivalent (2 workers, `--cpus=4`, trace off): 0 of 30 failed.**
+       - **The case passed in both supplied CI runs.** Not established: that the uninstrumented 60-repeat failures had the same form, or why the fix-up sometimes lands after the re-enable. No change is approved.
+     - **Scheduled, 7 October 2026, by the rider's decision:** a focused assertion repair, second in the order after [item 146](../backlog.md#item-146)'s timing capture.
+       - Compare actual element identity, not the changing label text.
+       - Keep the test's existing allowed focus behaviour when the button is disabled.
+       - Show that an unexpected move to another control still fails.
+       - The observed instrumented failures justify repairing what the assertion measures. They do not explain the underlying WebKit timing, or every earlier failure.
+       - No product focus-policy change, and no expansion into [item 135](../backlog.md#item-135).
+     - **Repair, 8 October 2026 — implemented, test-only; CI verification pending.** No application, version, workflow, timeout or retry change.
+       - **Both comparison sites:** the Enter case and the shared waiting-result checks of the seven "with the button low on Status" cases, in Chromium and WebKit. Each compared the focused element's text description at its before-snapshot with the one after the reveal.
+       - **Now:** the read that takes the existing before-snapshot also keeps, in the page, a reference to the focused element (none for `<body>`). The after-snapshot's own read reports whether focus is on `<body>` or on that very node. Allowed: that same node, whatever its label now reads, or `<body>`. A `<body>` before followed by the re-enabled button after still fails, and so does any other node, whatever its text.
+       - **Unchanged:** every tap, Enter, click, wheel and Tab; the snapshot timing; the result geometry; the scroll-call assertions; the result line not taking focus; the label checks. `active` remains a readable description, used in failure messages, the attached diagnostics (now also `focusBefore` and `focus`) and one deliberately retained static-label check, "focus stays where it was moved" (`BUTTON:Settings`). That label never changes, so this item's mechanism cannot affect it; its description would also match the primary navigation's Settings button, which is noted, not changed.
+       - **Verification**, in the CI image by digest, `CI=1`, 2 workers, outputs kept outside the repository: the selection listed exactly the 2 Enter and 14 shared-check cases. The Enter case ×5 per engine passed 10 of 10. The complete spec, once in both engines, passed 47 with 1 skipped (the Chromium-only mouse case). Every focus outcome recorded was `<body>` at both snapshots.
+       - **Temporary negative controls**, outside the repository, once per comparison site and engine. After the reveal had come to rest, each moved focus with `preventScroll`, so the scroll position and range stayed unchanged and every earlier assertion passed. All 12 failed at the repaired focus assertion:
+         - the switcher's Settings button: "moved to BUTTON:Settings";
+         - the re-enabled test button after a `<body>` before;
+         - a fixed-position clone of the test button reading its current text.
+       - **Directly exercised:** `<body>` → `<body>` accepted; an unrelated control, a re-enabled button after `<body>`, and a node with the button's text all rejected.
+       - **Not exercised here:** the same-node acceptance, a button → `<body>` transition, and a different node matching an element's before-text. `<body>` was already focused at every before-snapshot, and repetitions were not increased to reach them.
+       - **Supported only by the preserved instrumentation:** the same button node focused at both snapshots with its label changed (the three failures above), and the button → `<body>` transition.
+       - **Not established:** WebKit's focus fix-up timing, and the form of the uninstrumented 60-repeat failures. No product focus policy is decided, and nothing from [item 135](../backlog.md#item-135) is imported.
+       - **CI run 37748819780, on `827b362`:** all 24 Chromium cases of this spec passed, Enter included. The run failed on an Android gesture case outside the changed spec, whose test-side mechanism was confirmed locally and repaired test-only ([record](../e2e-coverage-runtime-audit.md#15-follow-up-ci-run-37748819780-and-its-repair)). Delivery stays pending until a green run.
+
+**The observation as recorded in `current-status.md`, moved here unchanged on 7 October 2026:**
+
+- **A WebKit focus check in `statusConnectionResultReveal.smoke.spec.ts` fails often under repetition, on the baseline too (7 October 2026).**
+  - **The case:** "Enter on the focused button: revealed, with focus left where it was" compares the focused element by its text. Twice it failed in combined local runs on item 125's build: the button was still focused once re-enabled, reading "Test routing connection", while the earlier snapshot had it focused as "Testing…".
+  - **The rates:** repeated 60 times on its own in the CI image, it failed **20 of 60 on item 125's build and 18 of 60 on a build source-equivalent to `0.4.68`**, in the identical way. The spec's own comment records Linux WebKit's deferred focus fix-up after the button is disabled.
+  - **What follows from that:** the failure is not attributed to item 125, and it is not changed here. No CI failure of it is recorded. No item number is allocated; whether it warrants one is the rider's decision.
+
+### CI verification — run 37758419670 (8 October 2026)
+
+Run [37758419670](https://github.com/adf-MD/amazing-cycling-navigation/actions/runs/37758419670), "Deploy to GitHub Pages" for `5c27a37` — the test-only repair of the Android two-finger tap that followed this item's own `827b362` — **passed every job**:
+
+| Job              | Whole job |
+| ---------------- | --------: |
+| Verify and build |     311 s |
+| E2E shard 1      |     689 s |
+| E2E shard 2      |     782 s |
+| E2E shard 3      |     428 s |
+| E2E shard 4      | **981 s** |
+| Deploy           |      10 s |
+
+- **Deployed:** the live site served `0.4.69` / `5c27a37`, the version unchanged, as intended. `677a03e` remains the phone-accepted build; these test-only changes need no device check.
+- **What the green run shows:** every executed test passed, with expected skips permitted — the suite skips some cases deliberately, among them this spec's Chromium-only mouse case in WebKit. Retries are off, so nothing passed on a second attempt. **The run's per-test counts, and this spec's individual results in it, stay unverified** until its four timing reports, `playwright-timing-37758419670-1-shard-1` to `-4`, are inspected. They exist; retrieving their contents needs authenticated GitHub access.
+- **Shard 4's 981 s is the longest shard job recorded**, 219 s under the 1,200 s limit; the previous longest was 967 s (run 37614828755). It is one run: neither a trend nor a cause is claimed.
+- **The failed run before it, 37748819780,** is recorded in [item 146's report](../e2e-coverage-runtime-audit.md#15-follow-up-ci-run-37748819780-and-its-repair), and its distinction stands. Confirmed locally: a contact's DOM `timeStamp` span follows CDP command arrival, so a slow `touchStart` acknowledgement can stretch a tap past MapLibre's 500 ms limit. Inferred, not measured: that the CI contact exceeded 500 ms, from its 500.873 ms command interval; its DOM timestamps were not recorded.
+- **The focus-verification limitations above are unchanged.** The same-node acceptance, a button → `<body>` transition and a different node matching an element's before-text were not exercised by the repair's own runs; the first two rest on the preserved instrumentation. WebKit's focus fix-up timing and the form of the uninstrumented 60-repeat failures stay unestablished, no product focus policy is decided, and nothing from [item 135](../backlog.md#item-135) is imported.
+
+**Closure.** Item 147 is complete within its approved scope: both comparison sites compare focus by node identity, the allowed loss of focus from the disabled button is kept, and an unexpected move to another control, or to a node merely reading the button's text, fails. Explaining WebKit's timing was never its closure condition and stays open as recorded above.
