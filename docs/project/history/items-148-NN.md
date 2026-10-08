@@ -104,3 +104,5 @@ Run [37791383314](https://github.com/adf-MD/amazing-cycling-navigation/actions/r
   - the unresolved cause of headless WebKit's late wheel scrolling.
 
 **Closure.** Item 148 is complete within its approved scope, which was correcting the fixture's preparation. The cause of WebKit's late wheel scrolling, whether tracing affects it, and the first occurrence's form stay unresolved. They were never its closure conditions, and [item 146's conclusion](item-146.md#conclusion-8-october-2026) records when to revisit them.
+
+**CI of the closing documentation commit, 8 October 2026.** Run 37800024030, for `cdc0529`, which closed this item, passed every job, and the live site served `0.4.69` / `cdc0529`. Its durations are recorded in [`current-status.md`](../current-status.md). The closure, its limitations and the unresolved cause above are unchanged.

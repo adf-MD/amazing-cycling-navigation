@@ -144,3 +144,5 @@ No benchmark, full-shard run or new diagnostic was made for it. The evidence, th
   Nothing is chosen or implemented now.
 
 **Closure.** Item 146 is concluded. Every material finding has an explicit disposition above. Completing every possible optimisation was not its closure condition, by the rider's decision of 7 October 2026, and unresolved reliability findings stay recorded where the table says. No further audit candidate is scheduled ahead of item 103. The order is now item 103 → item 120, with [item 145](../backlog.md#item-145)'s review checkpoint before item 103's audit.
+
+**CI of the closing commit, 8 October 2026.** Run 37800024030, for `cdc0529`, which concluded this item, passed every job: Verify and build 251 s; shards 622, 647, 525 and 828 s; Deploy 526 s. The live site served `0.4.69` / `cdc0529`, and `677a03e` remains the accepted phone build. No heuristic above fired, and 985 s remains the longest shard job recorded. Deploy's duration is recorded in [`current-status.md`](../current-status.md) as an observation outside the test shards, with no cause claimed. Nothing in this record — its dispositions, limitations or heuristics — changes.
