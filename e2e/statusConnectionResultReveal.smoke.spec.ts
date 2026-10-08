@@ -18,7 +18,8 @@ import { installLocalMapStyle } from "./support/localMapStyle.ts";
 //   [implementation] how the app moved the page: its scroll calls,
 //                    recorded by an init script.
 // Only [behaviour] assertions count as visible regression evidence. Timing
-// diagnostics are attached to each result and asserted on by neither.
+// and focus diagnostics are attached to each result and asserted on by
+// neither.
 //
 // Synthetic, and labelled where used: the routing provider is answered
 // locally, each request held until the test releases it with a success, a
@@ -297,7 +298,7 @@ interface Held {
   settled: boolean;
 }
 const held: Held[] = [];
-let diagnostics: Record<string, number> = {};
+let diagnostics: Record<string, number | string> = {};
 
 /** A routing response the adapter accepts: the straight line between the
  * requested waypoints, flat, with no surface extras. */
@@ -534,9 +535,18 @@ function busyButton(page: Page, language: Language): Locator {
     .getByRole("button", { name: COPY[language].testing });
 }
 
-/** One atomic in-page read of the result line, the button and the band. */
-function measure(page: Page) {
-  return page.evaluate((gap) => {
+/** One atomic in-page read of the result line, the button and the band.
+ * `active` describes the focused element readably — `body`, or its tag
+ * with its `aria-label` or first 30 characters of text — for messages, the
+ * attached diagnostics and one static-label check. Whether focus moved is
+ * judged by node identity instead (item 147): the button keeps its node
+ * while its label changes from "Testing…" to "Test routing connection".
+ * With `rememberFocus`, this same read keeps a reference to the element
+ * focused now (none for `<body>`) in the page, and every later read
+ * reports whether focus is on that very node. */
+function measure(page: Page, rememberFocus = false) {
+  const args = { gap: GAP, rememberFocus };
+  return page.evaluate(({ gap, rememberFocus }) => {
     const box = (node: Element | null | undefined) => {
       if (!node) return null;
       const r = node.getBoundingClientRect();
@@ -562,6 +572,9 @@ function measure(page: Page) {
       ? [...routingSection.querySelectorAll(":scope > button")].at(0)
       : null;
     const active = document.activeElement;
+    const focused = active === null || active === document.body ? null : active;
+    const kept = window as unknown as { __p15Remembered?: { node: Element | null } };
+    if (rememberFocus) kept.__p15Remembered = { node: focused };
     const scroller = document.scrollingElement ?? document.documentElement;
     return {
       scrollY: window.scrollY,
@@ -575,14 +588,27 @@ function measure(page: Page) {
       button: box(button),
       buttonText: button?.textContent.trim() ?? null,
       active:
-        active === null || active === document.body
+        focused === null
           ? "body"
-          : `${active.tagName}:${active.getAttribute("aria-label") ?? active.textContent.trim().slice(0, 30)}`,
+          : `${focused.tagName}:${focused.getAttribute("aria-label") ?? focused.textContent.trim().slice(0, 30)}`,
+      activeIsBody: focused === null,
+      // `focused` is never undefined, so this is false when nothing was
+      // remembered.
+      activeIsRemembered: kept.__p15Remembered?.node === focused,
       activeIsLine: active !== null && active === line,
     };
-  }, GAP);
+  }, args);
 }
 type Snapshot = Awaited<ReturnType<typeof measure>>;
+
+/** Where focus is in `after`, against the element a `measure(page, true)`
+ * remembered: "body", "the same node" — whatever its label now reads — or,
+ * for any other element, whatever its text, "moved to" its description. */
+function focusSinceRemembered(after: Snapshot): string {
+  if (after.activeIsBody) return "body";
+  if (after.activeIsRemembered) return "the same node";
+  return `moved to ${after.active}`;
+}
 
 function present<T>(value: T | null | undefined, what: string): T {
   if (value === null || value === undefined) throw new Error(`expected ${what}`);
@@ -792,8 +818,9 @@ test.describe("the result line revealed while the rider waits", () => {
       await placeButton(page, { aboveBandBottom: 4 });
       await startByTap(page, options.language);
       // Focus as the activation itself left it — the tap may focus the
-      // button, which is then disabled — so the reveal is judged alone.
-      const focusWhileWaiting = (await measure(page)).active;
+      // button, which is then disabled — remembered by node, so the reveal
+      // is judged alone.
+      const waiting = await measure(page, true);
       const releasedAt = await release(page, 0, outcome);
       await expect(
         page.locator('section.diagnostics-screen p[role="status"]'),
@@ -815,8 +842,16 @@ test.describe("the result line revealed while the rider waits", () => {
       expect(after.buttonText).toBe(copy.test);
       expect(after.activeIsLine).toBe(false);
       // The disabled button's own focus loss may still land late in Linux
-      // WebKit (see the Enter case); nothing else may change focus.
-      expect([focusWhileWaiting, "body"]).toContain(after.active);
+      // WebKit (see the Enter case); nothing else may change focus. Judged
+      // by node identity, not by the button's changing label.
+      Object.assign(diagnostics, {
+        focusBefore: waiting.active,
+        focus: focusSinceRemembered(after),
+      });
+      expect(
+        ["the same node", "body"],
+        `focus while waiting: ${waiting.active}`,
+      ).toContain(focusSinceRemembered(after));
       // [implementation] one smooth call, made after the answer.
       const calls = await appCallsSince(page, releasedAt);
       expect(calls.map((call) => call.kind)).toEqual(["scrollBy"]);
@@ -958,7 +993,7 @@ test.describe("the result line revealed while the rider waits", () => {
     await testButton(page, "en").focus();
     await page.keyboard.press("Enter");
     await expect(busyButton(page, "en")).toBeDisabled();
-    const before = await measure(page);
+    const before = await measure(page, true);
     const releasedAt = await release(page, 0, "success");
     await waitForRevealedGeometry(page, "bottom");
     const after = await measure(page);
@@ -968,8 +1003,17 @@ test.describe("the result line revealed while the rider waits", () => {
     // <body> as the button is disabled, while Linux WebKit keeps the
     // disabled button focused until a deferred focus fixup, which can land
     // after the snapshot above (2 of 3 repeats, 4 October 2026). Neither
-    // is iOS Safari's behaviour.
-    expect([before.active, "body"]).toContain(after.active);
+    // is iOS Safari's behaviour. Judged by node identity: in instrumented
+    // WebKit failures of the earlier text comparison (7 October 2026), the
+    // same button node was focused at both snapshots while its label had
+    // changed; that is all they established, not WebKit's timing.
+    Object.assign(diagnostics, {
+      focusBefore: before.active,
+      focus: focusSinceRemembered(after),
+    });
+    expect(["the same node", "body"], `focus before: ${before.active}`).toContain(
+      focusSinceRemembered(after),
+    );
     expect(after.activeIsLine).toBe(false);
     expect((await appCallsSince(page, releasedAt)).map((call) => call.kind)).toEqual([
       "scrollBy",

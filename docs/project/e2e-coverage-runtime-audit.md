@@ -302,6 +302,8 @@ Its timing differs from the original by one extra page evaluation before Enter, 
 - Why the fix-up is sometimes later than re-enabling.
 - That a product change is needed. Item 135 holds the product question of a disabled control's focus. This item concerns what the assertion measures.
 
+**The repair, 8 October 2026:** focus is now compared by node identity at both comparison sites, as recorded in [item 147's entry](backlog.md#item-147).
+
 ### Item 148 — the paused-End confirmation scroll preconditions
 
 **The precondition.** Each scrolled case opens End ride's confirmation and computes a wheel delta from the open snapshot. It then calls `wheelBy`, which finds a point outside the map, moves the mouse there, sends one `mouse.wheel(0, dy)`, and waits for 300 ms without `scrollY` changing (at most 5 s). Finally it asserts that the confirmation's top lies in the case's band.
@@ -566,7 +568,7 @@ The live site then served `0.4.69` / `49547aa`. The longest shard job, 893 s (sh
 
 ## 14. Timing capture: the implementation (7 October 2026)
 
-**Status: configured in the workflow; its first CI run is pending** at the time of writing. A commit cannot name itself, so the commit, its first run and that run's artefacts are recorded in the next documentation update.
+**Status: configured in the workflow; its first CI run is pending** at the time of writing. A commit cannot name itself, so the commit, its first run and that run's artefacts are recorded in the next documentation update. **Update, 7 October 2026: verified in CI run 37638928929** ([below](#the-first-ci-run-37638928929)).
 
 ### The change
 
@@ -639,6 +641,32 @@ All of this ran in the CI image by digest, with outputs kept outside the reposit
 - **No artefact on early termination** — cancellation, a timeout, an earlier step's failure, or the process ending before the report is written.
 - **The JSON reporter's own cost** is not measured. A second ordinary run's comparison is a follow-up, not a blocker. No extra CI run is to be triggered for it, and no run-to-run change is to be attributed to the reporter without evidence.
 - **Baselines** need an authenticated download into the audit folder.
+
+### The first CI run: 37638928929
+
+**The run.** Run 37638928929, on `51f1069`, passed every job and deployed:
+
+- Verify and build: 319 s;
+- the shard jobs: 623, 887, 444 and 965 s, with test steps of 556, 824, 380 and 903 s;
+- Deploy: 49 s.
+
+Each shard uploaded `playwright-timing-37638928929-1-shard-N`, in 1–2 s. The test steps agree with each report's own `stats.duration` (555.6, 823.1, 380.2 and 902.6 s).
+
+**The baseline.** The four reports were retrieved through authenticated GitHub access in a ChatGPT session, then supplied and extracted by the rider into the external audit folder's `ci-timing/`, with a manifest and a README, outside the repository. A read-only check of those files found:
+
+- the reports unchanged against the manifest's checksums and sizes, and the archive digests equal to GitHub's published ones;
+- 298 cases per shard (1,192 overall), with one result each: 1,187 passed and 5 skipped (WebKit);
+- `actualWorkers` 2 in every shard;
+- durations finite, non-negative and in milliseconds, with identities and annotations present;
+- no unexpected results and no top-level errors.
+
+The reports also carry the bodies of in-memory attachments, such as `statusConnectionResultReveal.smoke.spec.ts`'s scroll record; failure attachments remain paths.
+
+**The gaps, now:**
+
+- The first-run content gap is closed.
+- Still open: the reporter's own cost, an upload from a failing CI run, and no artefact on early termination.
+- The second sample comes from the next ordinary run, with no run triggered for it. Comparing its contents needs another authenticated download.
 
 ---
 

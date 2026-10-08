@@ -630,7 +630,7 @@ _Category: Riding presentation_
 
 <a id="item-146"></a>
 
-## Item 146 — E2E coverage and runtime audit (investigation; first in the approved order)
+## Item 146 — E2E coverage and runtime audit (investigation; its concluding review third in the approved order)
 
 _Category: End-to-end test suite_
 
@@ -680,12 +680,27 @@ _Category: End-to-end test suite_
          - a small selection in the CI image, giving valid JSON with identities, statuses, millisecond durations, annotations and `actualWorkers`;
          - a failure probe outside the suite: failure stays failure, and the trace, screenshot and error context are kept.
        - **Gaps:** the first CI artefacts' contents, until downloaded; a failing run's upload, not yet observed; no artefact on early termination; the reporter's cost, to be compared over a later ordinary run; baselines, still to be downloaded into the audit folder.
+     - **Timing capture verified in CI, 7 October 2026** ([record](e2e-coverage-runtime-audit.md#the-first-ci-run-37638928929)).
+       - **The run:** run 37638928929, on `51f1069`, passed every job and deployed. Verify and build took 319 s; the shard jobs 623, 887, 444 and 965 s; their test steps 556, 824, 380 and 903 s; Deploy 49 s. Each shard uploaded its `playwright-timing-37638928929-1-shard-N` artefact, in 1–2 s.
+       - **The baseline:** the four reports were retrieved through authenticated GitHub access in a ChatGPT session, then supplied and extracted by the rider into the external audit folder's `ci-timing/`, with a manifest. They stay outside the repository.
+       - **Verified from those files:**
+         - each report's checksum and size match the manifest, and each archive digest there equals GitHub's published digest;
+         - 298 cases per shard, 1,192 overall, one result each: 1,187 passed and 5 skipped (WebKit);
+         - two actual workers per shard;
+         - finite, non-negative millisecond durations, with identities and annotations present;
+         - no unexpected results and no top-level errors.
+       - **This closes the first-run content gap only.** Still open:
+         - the reporter's own cost;
+         - an upload from a failing CI run, still unobserved;
+         - no artefact on early termination.
+       - **The second timing sample** comes from the next ordinary CI run. No run is triggered for it, and comparing its contents needs another authenticated download.
+       - **Landscape checks** are unchanged.
 
 ---
 
 <a id="item-147"></a>
 
-## Item 147 — Status connection-result Enter/focus check (scheduled second — focused assertion repair)
+## Item 147 — Status connection-result Enter/focus check (first in the order — assertion repair implemented; CI verification pending)
 
 _Category: End-to-end test reliability_
 
@@ -709,6 +724,19 @@ _Category: End-to-end test reliability_
        - Show that an unexpected move to another control still fails.
        - The observed instrumented failures justify repairing what the assertion measures. They do not explain the underlying WebKit timing, or every earlier failure.
        - No product focus-policy change, and no expansion into [item 135](#item-135).
+     - **Repair, 8 October 2026 — implemented, test-only; CI verification pending.** No application, version, workflow, timeout or retry change.
+       - **Both comparison sites:** the Enter case and the shared waiting-result checks of the seven "with the button low on Status" cases, in Chromium and WebKit. Each compared the focused element's text description at its before-snapshot with the one after the reveal.
+       - **Now:** the read that takes the existing before-snapshot also keeps, in the page, a reference to the focused element (none for `<body>`). The after-snapshot's own read reports whether focus is on `<body>` or on that very node. Allowed: that same node, whatever its label now reads, or `<body>`. A `<body>` before followed by the re-enabled button after still fails, and so does any other node, whatever its text.
+       - **Unchanged:** every tap, Enter, click, wheel and Tab; the snapshot timing; the result geometry; the scroll-call assertions; the result line not taking focus; the label checks. `active` remains a readable description, used in failure messages, the attached diagnostics (now also `focusBefore` and `focus`) and one deliberately retained static-label check, "focus stays where it was moved" (`BUTTON:Settings`). That label never changes, so this item's mechanism cannot affect it; its description would also match the primary navigation's Settings button, which is noted, not changed.
+       - **Verification**, in the CI image by digest, `CI=1`, 2 workers, outputs kept outside the repository: the selection listed exactly the 2 Enter and 14 shared-check cases. The Enter case ×5 per engine passed 10 of 10. The complete spec, once in both engines, passed 47 with 1 skipped (the Chromium-only mouse case). Every focus outcome recorded was `<body>` at both snapshots.
+       - **Temporary negative controls**, outside the repository, once per comparison site and engine. After the reveal had come to rest, each moved focus with `preventScroll`, so the scroll position and range stayed unchanged and every earlier assertion passed. All 12 failed at the repaired focus assertion:
+         - the switcher's Settings button: "moved to BUTTON:Settings";
+         - the re-enabled test button after a `<body>` before;
+         - a fixed-position clone of the test button reading its current text.
+       - **Directly exercised:** `<body>` → `<body>` accepted; an unrelated control, a re-enabled button after `<body>`, and a node with the button's text all rejected.
+       - **Not exercised here:** the same-node acceptance, a button → `<body>` transition, and a different node matching an element's before-text. `<body>` was already focused at every before-snapshot, and repetitions were not increased to reach them.
+       - **Supported only by the preserved instrumentation:** the same button node focused at both snapshots with its label changed (the three failures above), and the button → `<body>` transition.
+       - **Not established:** WebKit's focus fix-up timing, and the form of the uninstrumented 60-repeat failures. No product focus policy is decided, and nothing from [item 135](#item-135) is imported.
 
 **The observation as recorded in `current-status.md`, moved here unchanged on 7 October 2026:**
 
@@ -721,7 +749,7 @@ _Category: End-to-end test reliability_
 
 <a id="item-148"></a>
 
-## Item 148 — Paused-End confirmation scroll preconditions (scheduled third — bounded investigation and proposal)
+## Item 148 — Paused-End confirmation scroll preconditions (scheduled second — bounded investigation and proposal)
 
 _Category: End-to-end test reliability_
 
