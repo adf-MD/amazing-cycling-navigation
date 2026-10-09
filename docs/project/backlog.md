@@ -637,3 +637,20 @@ _Category: Riding presentation_
        - none of this occurs at ordinary text, or in the 125–175% cases swept; the error itself stays wholly readable, with Pause, End ride and the title unmoved.
        - **Recommended:** candidate C — the visible map kept at its own existing 160 px floor, the riding column scrolling when it cannot fit. Item 139's presentation and ordinary text are unchanged; during such a failure at 200% the Map/Profile switcher is partly or wholly below the screen's edge until the rider scrolls. Keeping the current behaviour is also offered, and the attribution conflict is a separate decision. The decisions are listed in the report.
        - **Evidence:** automated only — browser root-text scaling, which is not iOS Larger Text (that setting does not resize the installed PWA), and a synthetic failure of unknown frequency. **Nothing is implemented or approved.**
+     - **Revised direction, 9 October 2026 — the rider's decision:** candidate C is not approved, and its scrolling riding shell is not to be implemented. Active riding should need as little scrolling as possible, and the Map/Profile switcher must stay on screen and must not move behind a disclosure. An information-priority investigation replaces the proposed padding-only "D" experiment. The order stays 145 → 142 → 103 → 120, and nothing is approved for implementation.
+     - **Information priorities investigated, 9 October 2026 — current status: the proposal awaits the rider's review** ([report](../design/route-riding-map-space/information-priorities.md)). On `681133f`, source-equivalent to the accepted `677a03e`, in Chromium and WebKit in the CI image:
+       - **The proposed candidate, E2**, keeps several things in view:
+         - always: the on-route status, the remaining distance and a compact GPS accuracy;
+         - when relevant: a stale fix's age, Offline, and an active Screen on lock;
+         - every failure and recovery action, in the card.
+
+         It moves the remaining ascent, the words "Live" and "Online", and the Screen on control behind a Details button.
+
+       - **Closed, at 200% root text,** a failed End then leaves 209–377 px of map on Planning routes and collapsed-notice GPX routes, in place of 74–242 px. The rider, the attribution, the map controls and the switcher stay in view. Ordinary text gains 11–18 px.
+       - **Opening Details takes map space,** at 175–200% up to all of it while open, but never the switcher. A Details toggle changed no lifecycle counter and no stored ride.
+       - **Unresolved:**
+         - German's first ten seconds of an imported GPX: 145 px. E2+N, with the notice compact from the start, gives 341 px and revises item 97.
+         - A location error with a frozen instruction and a failed End, in German at 200%: the switcher is still lost, as it already is today.
+         - The attribution overlap.
+       - **Found on the way:** today's refused Screen on retry is clipped off screen in German at 200%. E2 shows it.
+       - **Evidence:** automated only; VoiceOver is not established. **Nothing is implemented or approved.**

@@ -1,5 +1,7 @@
 # Item 145 — Route riding's map space at enlarged text: investigation and proposal
 
+**Revised direction (9 October 2026).** The rider did not approve candidate C: its scrolling riding shell is not to be implemented. Active riding should need as little scrolling as possible, and the Map/Profile switcher must stay on screen and must not move behind a disclosure. An information-priority investigation replaced the proposed padding-only "D" experiment. Its inventory, priorities, compact-summary prototype and measurements are in [**Riding information priorities**](information-priorities.md); its proposal awaits the rider's review. **Everything below is the 8 October record, unchanged.**
+
 **Status (8 October 2026): investigation complete; the proposal awaits the rider's review. Nothing is implemented, and nothing is approved.** This is [item 145](../../project/backlog.md#item-145)'s bounded investigation.
 
 - **The baseline:** commit `cdc0529`. Its application files are identical to `677a03e`, the build accepted on the installed iPhone, so it is source-equivalent to that build. It is not byte-identical: it was built locally, with the build identity `dev`.
