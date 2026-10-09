@@ -1,6 +1,6 @@
-# Current status — archive: dated records from 4 October back to 10 September 2026
+# Current status — archive: dated records from 6 October back to 10 September 2026
 
-This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026, and on 7 October 2026 the four of 4 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
+This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026, on 7 October 2026 the four of 4 October 2026, and on 9 October 2026 the three of 6 October 2026 and the two of 5 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
 
 **Where the moved text's positional references now point.** These records stood in `current-status.md` after its newer dated records and before its per-item entries from item 114 onwards, and their wording is kept exactly as written. Read them like this:
 
@@ -10,12 +10,159 @@ This file is **the continuation of [`current-status.md`](current-status.md)'s da
 - **In the seven records of 30 September and 1 October 2026, moved on 5 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist above" means `current-status.md`'s open checklist; "the item 102 entry below" means `current-status.md`'s per-item entry for item 102; and "the mouse double-click observation above" means the observation from automated testing in `current-status.md`'s checklist section. Their references to one another, such as "the `0.4.47` finding below", still point within this file.
 - **In the six records of 2 October 2026, moved on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; and "the item 132 checks above" means that Session 5's checks, listed in the same record. Their references to one another, such as the `0.4.53` record's "that observation is kept below", still point within this file.
 - **In the four records of 4 October 2026, moved on 7 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; "the next checklist", in the `0.4.61` record, means the session written for the following slice, since completed and removed. The P-01 observation's "the slice 9 acceptance below" still points within this file, to the record that follows it.
+- **In the five records of 5 and 6 October 2026, moved on 9 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed, and "the opportunistic monitoring above" means `current-status.md`'s opportunistic-monitoring list. Their references to one another still point within this file.
 - **In the six records of 3 October 2026, moved later on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist. Their references to one another, such as "the C-09 report above" and "D-02's acceptance below", still point within this file.
 - **"Item 115's installed-iPhone presentation checklist below"**, in the 12 September 2026 bicycle field test — the per-item checklists of that time, since consolidated into `current-status.md`'s Sessions 2 and 3.
 
 Links in these records are relative to `docs/project/`, as they were, and still resolve.
 
 ---
+
+### Installed-iPhone acceptance of `0.4.67` (build `9f73242`, item 134, reported 6 October 2026)
+
+**Device and build.** The installed Home Screen PWA, in German and English. The report names version `0.4.67` and build `9f73242` for the installed app; it does not say how they were read, and that was the deployed build when it was reported. It names no phone model or iOS version, and none is assumed. Session 5 specified stationary use in portrait at ordinary text, and the report does not restate those conditions. **The accepted build is `9f73242`**, and it stays so when later deployments change the deployed build ID.
+
+**The rider's report, verbatim:**
+
+> All checks pass in German and English. The installed version and build are 0.4.67 and 9f73242.
+
+That is item 134's Session 5, so its checks are complete for this device and the session has been removed from the checklist. Its four checks were:
+
+- **Ordinary Pause and Resume:** a route ride started, `Pause` / `Pause`, then `Resume ride` / `Fahrt fortsetzen` resuming tracking, then `Pause` / `Pause` again;
+- **Cancel End on the full paused-route screen:** `End ride` / `Fahrt beenden`, then `Cancel` / `Abbrechen`, leaving the ride paused; then `Resume ride` / `Fahrt fortsetzen` still working, and `Pause` / `Pause` again;
+- **Confirm End on the full paused-route screen**, without going through `Back to Ride options` / `Zurück zur Auswahl`: `Ride` / `Fahren` then showing `Choose a route` / `Route wählen`;
+- **Nothing comes back:** after fully closing and reopening the app, `Ride` / `Fahren` offering nothing to resume.
+
+This **accepts the ordinary flows of item 134 on `0.4.67`**, at product level, in German and English, and completes item 134 within its approved scope ([history](history/items-132-147.md#item-134)).
+
+**Automated evidence only**, as Session 5 listed it: Resume ride disabled while a held End finishes; a failed End keeping the ride paused, with Resume ride available again; a refused End's hand-back. This report is not physical-device acceptance of any of them.
+
+**Not established:**
+
+- **Whether a naturally slow End exposes the pending state on an iPhone** remains unmeasured; the held window cannot be induced through this ordinary checklist.
+- **VoiceOver** remains unverified: this report supplies no VoiceOver result.
+
+**Not inferred:** any phone model, iOS version, measured geometry or GPS-watch count; enlarged text or iOS Larger Text; landscape; physical Android.
+
+**Separate, automated evidence only.** The component and browser tests and their negative control stay as recorded in [item 134's history](history/items-132-147.md#item-134), with CI run 37483537843, which failed on `964f585` and deployed nothing, the test-only repair `9f73242`, and run 37491370472, which deployed it.
+
+### Installed-iPhone acceptance of `0.4.66` (build `c2cb9e6`, item 140 slice 2, reported 6 October 2026)
+
+**Device and build.** The installed Home Screen PWA, in English and German. The report names version `0.4.66` and build `c2cb9e6` for the installed app; it does not say how they were read, and that was the deployed build when it was reported. It names no phone model or iOS version, and none is assumed. Session 5 specified stationary use in portrait at ordinary text, and the report does not restate those conditions. **The accepted build is `c2cb9e6`**, and it stays so when later documentation deployments change the deployed build ID.
+
+**The rider's report, verbatim:**
+
+> Checks 1–5 pass both in English and German. Finish ride could not be exercised. The installed app is version 0.4.66, build c2cb9e6. VoiceOver was not tested.
+
+That is item 140's slice-2 Session 5, so its required checks are complete for this device and the session has been removed from the checklist. The accepted ordinary flows, as the rider listed them:
+
+- **End and switch from a paused route ride** to another route, including cancellation, the target opening ready to start, and reopening;
+- **End and switch from paused free roam** to a route, including cancellation and reopening;
+- **End ride from active route riding**;
+- **End ride from the full paused-route screen**, without going through **Back to Ride options**;
+- **End ride from active free roam**;
+- **cancellation and reopening** in those checks.
+
+This **accepts the ordinary flows of item 140's slice 2 on `0.4.66`**, at product level, in English and German. With the launcher slice's acceptance it completes item 140 within its approved scope ([history](history/items-132-147.md#item-140)). Session 5's last check — fully closing and reopening the app after each — is recorded as the reopening within those checks, as listed; the report does not separately state that check's second clause, that neither an error nor the stale-session notice appeared, so that clause is not claimed on its own.
+
+**Not exercised or not tested, kept as notes:**
+
+- **Finish ride**, Session 5's optional check, could not be exercised and keeps automated evidence only. It is watched for under opportunistic monitoring above.
+- **VoiceOver** was not tested.
+
+**Automated evidence only**, as Session 5 listed it: the two-window races and their refusal notices; End and switch to free roam, which an ordinary single window reaches only from a launcher that read nothing stored; a failed free-roam replacement and its retry; the other synthetic failure paths; refusals of End ride and Finish ride; held writes; free roam's restore finding its session gone. This report is not physical-device acceptance of any of them.
+
+**Not claimed:**
+
+- **[Item 143](backlog.md#item-143) and [item 144](backlog.md#item-144)** — stale-window writes and older-version windows — stay open; this acceptance closes neither.
+- **[Item 142](backlog.md#item-142)** stays unscheduled and uninvestigated.
+- Any phone model, iOS version, measured geometry or GPS-watch count; enlarged text or iOS Larger Text; landscape; physical Android.
+
+**Separate, automated evidence only.** The regression, its negative controls and the unit tests stay as recorded in [item 140's slice 2](history/items-132-147.md#item-140-slice-2), with CI run 37461451985, which deployed `c2cb9e6` after run 37458478038 had failed on `7da1f19` and been followed by the test-only repair.
+
+### Installed-iPhone acceptance of `0.4.65` (build `1d59d95`, item 140 launcher slice, reported 6 October 2026)
+
+**Device and build.** The installed Home Screen PWA, in English and German. The report names version `0.4.65` and build `1d59d95`; it does not say how they were read, and that was the deployed build when it was reported. It names no phone model or iOS version, and none is assumed. Session 5 specified stationary use in portrait at ordinary text, and the report does not restate those conditions. **The accepted build is `1d59d95`**, and it stays so when later documentation deployments change the deployed build ID.
+
+**The rider's report, as relayed:**
+
+> Ordinary End, Discard, cancellation and reopening pass in English and German; VoiceOver untested. No unexpected errors or stale-session notices appeared.
+
+That is item 140's launcher-slice Session 5, so that session is complete for this device and has been removed from the checklist. Its checks were:
+
+- **End ride for a route ride:** from the Ride screen's summary of a paused ride, `End ride` / `Fahrt beenden` cancelled once and then confirmed, leaving `Choose a route` / `Route wählen`;
+- **End ride for free roam:** after navigating to another app tab and returning to `Ride` / `Fahren`, the same, from `Resume free roam` / `Freies Fahren fortsetzen`;
+- **Discard:** after deleting the paused ride's route, `Discard unfinished ride` / `Unbeendete Fahrt verwerfen` cancelled once and then confirmed;
+- **nothing comes back:** after each, fully closing and reopening the app offered nothing to resume;
+- **no new message and no error:** neither "The previously shown ride had already ended or been replaced. Nothing was deleted." / „Die zuvor angezeigte Fahrt war bereits beendet oder ersetzt worden. Es wurde nichts gelöscht.“ nor an error appeared.
+
+This **accepts the ordinary flows of item 140's launcher slice on `0.4.65`**, at product level, in English and German: End ride, Discard, their cancellation, reopening the app afterwards, and no unexpected error or stale-session notice in those flows.
+
+**Not claimed:**
+
+- **The two-window race and the notice's behaviour in it.** The race needs two windows of the site and cannot be reached in the installed PWA; it, a session replaced on the same route, a failed re-read or identity assignment, and free roam's restoration gate have automated evidence only.
+- **Item 140's remaining scope** — End and switch, the riding screens' own End ride and Finish ride, stale-window writes and windows running an older version. It stays open, and this acceptance closes none of it.
+- **VoiceOver**, which was not checked and stays untested.
+- Any phone model, iOS version or measured geometry; enlarged text or iOS Larger Text; landscape; physical Android.
+
+**A separate observation reported with it**, recorded as stated: after a route's deletion, the full paused-route screen still permits resumption if the rider has not taken **Back to Ride options**. It is filed as unscheduled [item 142](backlog.md#item-142). The exact deletion operation, which stored records remain and the cause are not established. **No cause or connection to item 140 has been established.**
+
+**Separate, automated evidence only.** The race regression, the repository, launcher and hook tests and their negative controls stay as recorded in [item 140's entry](history/items-132-147.md#item-140-launcher-slice), with CI run 37434895346, which deployed `1d59d95`.
+
+### Installed-iPhone acceptance of `0.4.64` (build `0c69101`, item 122, reported 5 October 2026)
+
+**Device and build.** The installed Home Screen PWA, in English and German. The report names no version, build, phone model, iOS version or viewport, and none is assumed; no measurement was made on the device. When it was reported the deployed build was `0.4.64` (`0c69101`), the build Session 5 was written for; that is the deployed context, not a reading from the device. Session 5 specified stationary use in portrait at ordinary text, with the OpenRouteService key saved, and the report does not restate those conditions.
+
+**The rider's report, verbatim:**
+
+> All the checks you mention pass both in English and German.
+
+That is item 122's Session 5, so that session is complete for this device and has been removed from the checklist. Its six checks were:
+
+- **the larger map:** Planning's map clearly taller than before, with panning, pinch-zooming, rotating and tilting behaving as usual;
+- **Calculate placement:** `Calculate route` / `Route berechnen` directly below the map, before `Undo` / `Rückgängig` and the other editing actions, visible without scrolling with an ordinary draft (for an Edit copy draft, an observation rather than a pass condition);
+- **a selected waypoint:** `Deselect waypoint` / `Wegpunkt abwählen` added to the editing actions, with `Calculate route` not moving;
+- **the editing controls staying put:** on a calculated route, two quick taps on `Undo` / `Rückgängig` both undoing, with the editing row unmoved while the recalculation note appears below it and clears;
+- **Edit copy:** with the `Editing a copy` / `Kopie in Bearbeitung` panel open, scrolling still reaching `Calculate route`, the editing actions, the waypoint list and Save;
+- **placing waypoints:** the crosshair control placing a waypoint, as before.
+
+This **accepts item 122's visual and functional checks on `0.4.64`**, at product level, in English and German.
+
+**Not claimed:**
+
+- **The German multi-section shift.** On 375- and 320-wide layouts German's multi-section Calculate label wraps and the enabled editing buttons move down 16 px while such a recalculation runs. That automated finding was not part of the checks, and this report neither resolves nor accepts it.
+- **VoiceOver and physical Android**, which were not checked and stay untested.
+- **Item 135's focus limitations**, which are separate and unchanged.
+- Any phone model, iOS version, viewport size or measured geometry; enlarged text or iOS Larger Text; landscape.
+
+**Separate, automated evidence only.** 200% text, the synthetic safe-area insets and desktop classic scrollbars stay as recorded in [item 122's history](history/item-122.md#item-122), with CI run 37334772213, which deployed `0c69101`.
+
+### Installed-iPhone acceptance of `0.4.63` (build `a474254`, item 141, reported 5 October 2026)
+
+**Device and build.** The installed Home Screen PWA, in German and English. The report names no version, build, phone model or iOS version, and none is assumed. When it was reported the deployed build was `0.4.63` (`a474254`), the build Session 5 was written for; that is the deployed context, not a reading from the device. Session 5 specified stationary use in portrait at ordinary text, and the report does not restate those conditions.
+
+**The rider's report, verbatim:**
+
+> All checks pass in German and English, VoiceOver did not get checked.
+
+That is item 141's Session 5, so that session is complete for this device and has been removed from the checklist. Its six checks were:
+
+- **an exact copy:** `Editing a copy` / `Kopie in Bearbeitung` beside the heading, with no short line and no long notice above the map;
+- **an estimated copy:** the same button, with the short estimated-waypoints line below it;
+- **the panel:** opening it shows the full explanation and hides the short line, and closing it restores the line, with nothing jumping;
+- **edits:** adding or moving a waypoint, and Reverse route, leave the notice as it was;
+- **leaving and returning:** after Routes → Plan, and after a full close and reopen, the button is there with the panel closed;
+- **removal:** after Save route or a confirmed Clear draft, the button and its line are gone.
+
+This **accepts item 141's visual and functional checks on `0.4.63`**, at product level, in German and English.
+
+**Not claimed:**
+
+- **VoiceOver.** The optional VoiceOver step was not checked. Whether the explanation is announced on arrival, how the button's name and expanded state are read, and whether the explanation is read twice while the panel is open all remain **untested**. This is not screen-reader acceptance.
+- **Item 135's focus limitation.** Focus falling to `<body>` when Save or Clear draft removes the focused indicator is unchanged and not resolved by this report.
+- Any phone model, iOS version or measured geometry; enlarged text or iOS Larger Text; landscape; physical Android.
+
+**Separate, automated evidence only.** Legacy reversed drafts, 200% text and the synthetic safe-area insets stay as recorded in [item 141's history](history/items-132-147.md#item-141); Session 5 did not include them. CI run 37306394172, which deployed `a474254`, is recorded there too.
 
 ### Installed-iPhone acceptance of `0.4.62` (build `a71ca2f`, item 124 slice 11, P-15, reported 4 October 2026)
 

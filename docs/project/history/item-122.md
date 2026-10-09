@@ -172,7 +172,7 @@ The live site then served `0.4.64` with build `0c69101`.
 **Accepted** on the installed iPhone, in English and German: Session 5's six visual and functional checks, at product level.
 
 - **The build** was deployed `0.4.64` (`0c69101`). That is the deployed context: no version, build, phone model, iOS version or viewport was reported from the device, and no measurement was made on it.
-- **The verbatim report,** and what it does not establish, is in [`current-status.md`](../current-status.md#installed-iphone-acceptance-of-0464-build-0c69101-item-122-reported-5-october-2026).
+- **The verbatim report,** and what it does not establish, is in [`current-status-archive.md`](../current-status-archive.md#installed-iphone-acceptance-of-0464-build-0c69101-item-122-reported-5-october-2026).
 - **The German multi-section shift is neither resolved nor accepted.** On 375- and 320-wide layouts German's multi-section Calculate label wraps and the enabled editing buttons move down 16 px while such a recalculation runs; the report does not cover it, and it stays a recorded limitation.
 - **VoiceOver and physical Android** were not checked and stay untested.
 - **Item 135's focus limitations** are separate and unchanged.

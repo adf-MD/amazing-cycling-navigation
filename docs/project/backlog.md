@@ -520,7 +520,7 @@ _Category: Maintenance_
 _Category: Riding lifecycle_
 
 142. **Paused-route behaviour after deletion and Back to Ride options — investigation**
-     - Origin: the rider's observation, reported on 6 October 2026 together with item 140's launcher-slice acceptance on `0.4.65` (build `1d59d95`) ([dated record](current-status.md#installed-iphone-acceptance-of-0465-build-1d59d95-item-140-launcher-slice-reported-6-october-2026)). **Filing it here does not establish a defect, a cause or a fix.**
+     - Origin: the rider's observation, reported on 6 October 2026 together with item 140's launcher-slice acceptance on `0.4.65` (build `1d59d95`) ([dated record](current-status-archive.md#installed-iphone-acceptance-of-0465-build-1d59d95-item-140-launcher-slice-reported-6-october-2026)). **Filing it here does not establish a defect, a cause or a fix.**
      - **Historical status when filed (6 October 2026):** **Unscheduled, and not part of the approved execution order** ([order](../../CLAUDE.md)), which is unchanged. It awaits investigation and the rider's prioritisation. No change is approved by this entry.
      - **Current status — scheduled on 8 October 2026:** second in the approved execution order, after [item 145](#item-145) and before items 103 and 120, by the rider's acceptance of the recommended sequence ([order](../../CLAUDE.md)). **Scheduling approves the bounded investigation and proposal below only:** no deletion policy, no removal of Back to Ride options and no implementation. Any proposed implementation that changes the Ride layouts is reviewed before the affected parts of [item 103](#item-103) are refined.
      - **The observation, as reported:** after deletion, the full paused-route screen still permits resumption if the rider has not taken **Back to Ride options**.
@@ -654,3 +654,13 @@ _Category: Riding presentation_
          - The attribution overlap.
        - **Found on the way:** today's refused Screen on retry is clipped off screen in German at 200%. E2 shows it.
        - **Evidence:** automated only; VoiceOver is not established. **Nothing is implemented or approved.**
+     - **Text-enlargement support investigated, 9 October 2026, as authorised by the rider the same day. The support policy and every product change await review** ([report](../design/route-riding-map-space/text-enlargement-support.md)).
+       - On the installed iPhone, no text-enlargement mechanism is known to reach ACN's layout. The claim that Larger Text does not resize ACN rests on source inspection (9 September 2026) and one inconclusive device attempt, so it remains unverified on iOS 26. A five-step stationary check is proposed.
+       - Visual magnification (pinch or focus zoom, iOS Zoom) is available and changes no layout.
+       - In Chromium, the tests' 200% root font lays out the riding screen exactly as a 32 px browser default font does. It does not represent page zoom: a 195×422 proxy for 200% zoom leaves a Planning route no map and the switcher off screen.
+       - **Proposed policy:**
+         - the ordinary-text installed-iPhone contract stays primary and unchanged, with nothing disclosed;
+         - 200% root text stays an automated acceptance condition for no loss of content or functionality, with the switcher on screen;
+         - page-zoom proxies, 250% and compound failure states become diagnostics;
+         - magnification is never blocked.
+       - **Proposed next investigation:** an enlarged-text-only constrained presentation, with the compound state and the clipped Screen on retry. Every earlier finding and decision stays open.
