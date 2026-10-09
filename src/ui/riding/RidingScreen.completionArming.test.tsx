@@ -6,7 +6,7 @@
 // act()-wrapped emitFix calls) rather than reinventing them. See
 // CLAUDE.md's "A finished ride's persisted state is never cleared" entry,
 // completion-arming paragraph, for the feature this proves.
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RidingScreen } from "./RidingScreen.tsx";
@@ -20,6 +20,24 @@ import type { PlannedRoute } from "../../domain/types.ts";
 import { buildRoutePointsFromWaypoints } from "../../test/fixtures/routeGeometry.ts";
 import { buildFakeGeolocationSource } from "../../test/fixtures/geolocationSource.ts";
 import type { GeolocationFix } from "../../platform/geolocation.ts";
+import type * as RideStateRepository from "../../storage/rideStateRepository.ts";
+
+// Every ride-state save started in a test, kept until the afterEach below has
+// awaited it. A pass-through: the real repository and its IndexedDB write
+// still run, and nothing is replaced or made immediate.
+const startedRideStateSaves = vi.hoisted(() => new Set<Promise<boolean>>());
+
+vi.mock("../../storage/rideStateRepository.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof RideStateRepository>();
+  return {
+    ...actual,
+    setActiveRideState: (...args: Parameters<typeof actual.setActiveRideState>) => {
+      const save = actual.setActiveRideState(...args);
+      startedRideStateSaves.add(save);
+      return save;
+    },
+  };
+});
 
 const routePoints = buildRoutePointsFromWaypoints(
   [
@@ -112,6 +130,28 @@ function createMockMapFactory(): { factory: MapFactory } {
 beforeEach(async () => {
   await db.routes.clear();
   await db.rideState.clear();
+});
+
+// Every emitted fix starts a save that these tests do not otherwise await,
+// and its success callback updates the screen's state. Left running, that
+// callback ran after cleanup() had unmounted the screen; during the next test,
+// after its beforeEach had cleared the store; or, for the file's last test,
+// after the environment's teardown, where React threw "window is not
+// defined" (CI run 37913267813). This hook runs before setup.ts's cleanup()
+// (Vitest's default "stack" order for after-hooks), so every save and its
+// callback finish inside act() while the screen is still mounted. The saves
+// are awaited here, after the screen attached its own .then() when it
+// started them, so the screen's callback has run by the time they settle.
+// A save may resolve false when an End cancels it; none of these tests
+// expects one to reject.
+afterEach(async () => {
+  while (startedRideStateSaves.size > 0) {
+    const saves = [...startedRideStateSaves];
+    startedRideStateSaves.clear();
+    const results = await act(async () => Promise.allSettled(saves));
+    const rejections = results.filter((result) => result.status === "rejected");
+    expect(rejections, "a ride-state save rejected").toEqual([]);
+  }
 });
 
 describe("RidingScreen route-completion arming", () => {
