@@ -664,3 +664,17 @@ _Category: Riding presentation_
          - page-zoom proxies, 250% and compound failure states become diagnostics;
          - magnification is never blocked.
        - **Proposed next investigation:** an enlarged-text-only constrained presentation, with the compound state and the clipped Screen on retry. Every earlier finding and decision stays open.
+     - **Device check and diagnosis, 12 October 2026 — documentation only; the proposals await the rider's review** ([findings](../design/route-riding-map-space/device-zoom-findings.md), [record](current-status.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026)).
+       - **On the installed iPhone 13** (iOS 26.6.1, German, `4164bcc`), Larger Text and Control Centre's Text Size produced no visible enlargement, while Display Zoom and Safari's Page Zoom setting (150%) changed the installed app. Pinch zoom works and can be reversed.
+       - **The defects reported:**
+         - the Profile range selector overflows, under both;
+         - at 150% page zoom, route riding at a 0 m turn shows only a narrow strip of map, before any failed End.
+       - **The diagnosis**, by viewport proxies in the CI image, not native zoom:
+         - the selector's fixed four-column grid lets a label outgrow its track, and the Profile pane scrolls horizontally;
+         - at the page-zoom proxy, height is the main loss of map, with 84 px of wrapping on top, and the map's 160 px floor and follow anchor hide the rider below about 145 px.
+       - **Also found, automated only:** a refused Screen on request puts its retry partly off screen at ordinary German text, at 390×844.
+       - **Proposed next implementation slice:** P1, the active selector wrapping instead of overflowing, with ordinary text unchanged at 375–390 px. P3, keeping the refused control inside the card, is a separate decision: at 200% it trades the retry for the switcher in German.
+       - **Not resolved:**
+         - **The map at 150% page zoom:** no small change restores it. P2, the Screen on toggle kept beside the text, was measured and rejected.
+         - **`Einstellungen`'s one-letter navigation break:** proposed as an input to [item 103](#item-103), with items 113 and 121 not reopened.
+       - **Nothing is implemented or approved.**
