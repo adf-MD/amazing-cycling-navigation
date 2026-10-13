@@ -2,6 +2,8 @@
 
 **Status (9 October 2026): the rider authorised this investigation the same day, within [item 145](../../project/backlog.md#item-145), and it is complete. The recommended support policy and every product change await the rider's review; nothing is implemented.**
 
+**Current direction (13 October 2026):** the rider chose to explore two app-controlled text modes, Regular and Larger, supported at default browser text and 100% page zoom across a documented range of phone sizes ([proposal](text-modes-proposal.md)). The support levels A–C below are superseded as the current proposal. In particular, the tests' 200% root text is proposed as a non-blocking diagnostic rather than level B's acceptance condition. The mechanisms, evidence and limitations stay as recorded.
+
 **Update (12 October 2026):** the stationary check below has been run on the installed iPhone 13 (iOS 26.6.1, German, `4164bcc`). Larger Text and Control Centre's Text Size produced no visible enlargement; Display Zoom and Safari's Page Zoom setting did change the installed app; pinch zoom works and can be reversed. Its record is in [`current-status.md`](../../project/current-status.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026), and its diagnosis and proposals in [Device zoom findings](device-zoom-findings.md). Summary points 1, 2 and 4, the mechanism table and the Larger Text section are revised accordingly; the rest is the 9 October record.
 
 E2, E2+N, hiding the remaining ascent and the extra Screen on taps all remain unapproved. The companion reports are [Riding information priorities](information-priorities.md) and [the first report](README.md).

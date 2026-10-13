@@ -678,3 +678,27 @@ _Category: Riding presentation_
          - **The map at 150% page zoom:** no small change restores it. P2, the Screen on toggle kept beside the text, was measured and rejected.
          - **`Einstellungen`'s one-letter navigation break:** proposed as an input to [item 103](#item-103), with items 113 and 121 not reopened.
        - **Nothing is implemented or approved.**
+     - **Revised direction and a text-mode proposal, 13 October 2026 — documentation only; the proposal awaits the rider's review** ([proposal](../design/route-riding-map-space/text-modes-proposal.md)).
+       - **The rider's direction:**
+         - app-controlled Regular and Larger text modes, supported at default browser text and 100% page zoom across a documented range of portrait phone sizes;
+         - further browser enlargement and page zoom stay available, outside that layout commitment;
+         - P1 and P3 are paused, and P1's second selector row is not to be built for an enlarged-text check.
+       - **Proposed:**
+         - a provisional range of 320–440 × 568–956 CSS px;
+         - a padding-only selector correction that keeps the equal quarters;
+         - Larger at 125%, app-wide, with the Screen on toggle and the selector's labels held at Regular size, and committed from 360 px wide; or 112.5% across the whole range;
+         - a relative root rule;
+         - a Text size card in Settings' Preferences, with draft English and German explanations.
+       - **Measured** in the CI image, in Chromium, with WebKit spot checks:
+         - Regular already falls short at the range's narrow and short end;
+         - some failure states conflict in both modes.
+
+         Each conflict is listed for a decision, none assumed to be an exception.
+
+       - **Proposed test scope:**
+         - behavioural protections that use 200% are retained;
+         - the 200% layout guarantees are replaced by Larger at the range's edges and kept as non-blocking diagnostics;
+         - a commitment matrix is added;
+         - the departures from item 146 are named.
+       - **Recommended next slice:** the selector's padding and the refused Screen on control's containment, in Regular, before the modes.
+       - **Nothing is implemented or approved.**

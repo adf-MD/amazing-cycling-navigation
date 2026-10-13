@@ -1,5 +1,7 @@
 # Item 145 — Device zoom findings: evidence, diagnosis and a proposed next slice
 
+**Current direction (13 October 2026).** The rider revised item 145's direction: Regular and Larger text modes, supported at default browser text and 100% page zoom across a documented range of phone sizes ([proposal](text-modes-proposal.md)). **P1 and P3 below are paused.** P1's second selector row is not to be built for an enlarged-text check; a padding-only selector correction is proposed in its place. The findings here stay recorded unchanged. The recommended next slice, provisional target and decisions below are the 12 October record, superseded as the current proposal.
+
 **Status (12 October 2026): documentation only. The proposals await the rider's review, and nothing is implemented.** E2, E2+N, hiding the remaining ascent, extra Screen on taps and compound-failure exceptions all remain unapproved, and none is proposed here.
 
 - **The device evidence** is the rider's report of 12 October 2026 on the installed iPhone 13, recorded in [`current-status.md`](../../project/current-status.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026).
