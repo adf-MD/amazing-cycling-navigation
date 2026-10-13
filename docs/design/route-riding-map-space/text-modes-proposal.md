@@ -1,6 +1,6 @@
 # Item 145 — Regular and Larger text modes: support range, Larger size, tests and Settings
 
-**Status (13 October 2026): documentation only. The rider set this direction on 13 October 2026, within [item 145](../../project/backlog.md#item-145). The proposal awaits the rider's review, and nothing is implemented.** P1 and P3 from the [device findings](device-zoom-findings.md) stay paused. The queue stays 145 → 142 → 103 → 120.
+**Status (13 October 2026): documentation only. The rider set this direction on 13 October 2026, within [item 145](../../project/backlog.md#item-145). The proposal awaits the rider's review, and nothing is implemented.** P1 and P3 from the [device findings](device-zoom-findings.md) stay paused. The queue stays 145 → 142 → 103 → 120. **CI of this proposal's commit:** run 38389244757 on `1ea3008` failed in Verify and build, on a routing test's timestamp collision unrelated to this proposal, and Deploy was skipped. The test-only repair is recorded in [`current-status.md`](../../project/current-status.md).
 
 **The direction, as given:**
 

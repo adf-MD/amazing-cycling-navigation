@@ -970,56 +970,71 @@ describe("OpenRouteServiceAdapter", () => {
     });
 
     it("never includes the dummy key or waypoint coordinates in a recorded diagnostic", async () => {
-      const fetchImpl = buildFetchMock({
-        ok: false,
-        status: 502,
-        json: () =>
-          Promise.resolve({
-            error: `request from key ${DUMMY_KEY} at ${JSON.stringify(WAYPOINTS)} failed`,
-          }),
-      });
-      const adapter = new OpenRouteServiceAdapter({
-        getApiKey: () => Promise.resolve(DUMMY_KEY),
-        fetchImpl,
-      });
+      // The recorded diagnostic carries a real timestampIso, and a
+      // whole-object substring check can collide with it: CI run 38389244757
+      // recorded 2026-10-13T11:20:53.808Z, which contains "53.8". Only Date is
+      // faked, at an instant containing none of the checked substrings, so
+      // the adapter's timeout scheduling stays real.
+      const fixedInstant = "2026-01-01T00:00:00.000Z";
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(fixedInstant));
+      try {
+        const fetchImpl = buildFetchMock({
+          ok: false,
+          status: 502,
+          json: () =>
+            Promise.resolve({
+              error: `request from key ${DUMMY_KEY} at ${JSON.stringify(WAYPOINTS)} failed`,
+            }),
+        });
+        const adapter = new OpenRouteServiceAdapter({
+          getApiKey: () => Promise.resolve(DUMMY_KEY),
+          fetchImpl,
+        });
 
-      await expect(
-        adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
-      ).rejects.toBeInstanceOf(RoutingError);
+        await expect(
+          adapter.calculateRoute(WAYPOINTS, { profile: "cycling-road" }),
+        ).rejects.toBeInstanceOf(RoutingError);
 
-      const [latest] = getRecentRoutingAttempts();
-      const serialised = JSON.stringify(latest);
-      expect(serialised).not.toContain(DUMMY_KEY);
-      expect(serialised).not.toContain("-1.5");
-      expect(serialised).not.toContain("53.8");
-      expect(Object.keys(latest ?? {}).sort()).toEqual(
-        [
-          "attemptId",
-          "timestampIso",
-          "providerId",
-          "endpointHost",
-          "endpointPath",
-          "httpMethod",
-          "wasOnline",
-          "isSecureContext",
-          "isServiceWorkerControlled",
-          "isStandalone",
-          "waypointCount",
-          "elapsedMs",
-          "headersConstructed",
-          "requestConstructed",
-          "fetchInvoked",
-          "fetchReturnedPromise",
-          "responseReceived",
-          "httpStatus",
-          "statusText",
-          "bodyWasJson",
-          "providerErrorCode",
-          "rateLimitRemaining",
-          "rateLimitLimit",
-          "category",
-        ].sort(),
-      );
+        const [latest] = getRecentRoutingAttempts();
+        // The fixed clock is in effect, so the substring checks below test
+        // the diagnostic's content rather than the time the test ran.
+        expect(latest?.timestampIso).toBe(fixedInstant);
+        const serialised = JSON.stringify(latest);
+        expect(serialised).not.toContain(DUMMY_KEY);
+        expect(serialised).not.toContain("-1.5");
+        expect(serialised).not.toContain("53.8");
+        expect(Object.keys(latest ?? {}).sort()).toEqual(
+          [
+            "attemptId",
+            "timestampIso",
+            "providerId",
+            "endpointHost",
+            "endpointPath",
+            "httpMethod",
+            "wasOnline",
+            "isSecureContext",
+            "isServiceWorkerControlled",
+            "isStandalone",
+            "waypointCount",
+            "elapsedMs",
+            "headersConstructed",
+            "requestConstructed",
+            "fetchInvoked",
+            "fetchReturnedPromise",
+            "responseReceived",
+            "httpStatus",
+            "statusText",
+            "bodyWasJson",
+            "providerErrorCode",
+            "rateLimitRemaining",
+            "rateLimitLimit",
+            "category",
+          ].sort(),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
