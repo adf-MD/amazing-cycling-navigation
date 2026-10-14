@@ -2986,6 +2986,13 @@ button:focus-visible {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+/* Item 145: the global 16px inline padding let German "Gesamt" spill out
+ * of its quarter at 320px wide. The grid tracks still set every button's
+ * box, so only the room for its label changes. */
+.ride-profile-pane--immersive .elevation-window-button {
+  padding-inline: var(--space-4);
+}
+
 /* Active Riding only (backlog item 80): the same neutral selected ring as
  * .elevation-window-button.is-selected's own base (outward) treatment
  * above, but INSET — mirrors this file's own established inset-ring

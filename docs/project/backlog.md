@@ -702,3 +702,36 @@ _Category: Riding presentation_
          - the departures from item 146 are named.
        - **Recommended next slice:** the selector's padding and the refused Screen on control's containment, in Regular, before the modes.
        - **Nothing is implemented or approved.**
+     - **Selector padding slice, 14 October 2026 — implemented for `0.4.70`; CI, deployment and the installed-iPhone check pending** ([record](#item-145-selector-slice)). The rider approved the active Profile selector's 4 px padding alone on 13 October 2026; everything else above stays undecided.
+
+<a id="item-145-selector-slice"></a>
+
+### Selector padding slice — implemented for `0.4.70` (14 October 2026)
+
+**Approved by the rider on 13 October 2026, narrower than the proposal's recommended slice, and implemented on 14 October 2026. CI, deployment and the installed-iPhone check are pending** ([checklist](current-status.md#session-1--stationary-on-the-installed-home-screen-pwa)). Item 145 stays open.
+
+- **The change:** in the active Profile pane only, the range buttons' inline padding is `--space-4` (4 px), in place of the global button rule's 16 px (`src/index.css`). The four-column grid, its spacing, the vertical padding, the minimum sizes, the inset selected ring, the inward focus outline, the labels and the actions are unchanged, as are the shared button rule and the pre-ride selector. The version is `0.4.70`.
+- **Not included:** the refused Screen on control's containment, which clips the rider at 375×667 and stays undecided; the Regular and Larger modes, the root rule and the Settings card; P1, P3, E2, E2+N, a hidden ascent, extra Screen on taps, support-range exceptions and test retirement.
+- **The browser test,** `e2e/ridingProfileSelectorFit.smoke.spec.ts`, in Chromium and WebKit, in English and German, with and without Climb, at 320×693 and 390×844:
+  - every label inside its button, clear of the 2 px selected ring, and centred;
+  - one row, with no sideways scrolling in the pane or the document;
+  - the same literal boxes as before: 66 px quarters at 320 px, 83.5 px at 390 px, 44 px tall; Climb flush right, or the fourth track left empty;
+  - the switcher on screen, and every button operable.
+- **Measured in the CI image, as local evidence (14 October 2026):**
+  - **Cost:** four cases per project, so four new WebKit cases. At two workers, in two runs, the WebKit cases summed 19.8 and 22.5 s (3.5–7.6 s each) and the Chromium cases 13.6 and 14.7 s. In the four-shard split they fall into shard 2 (Chromium) and shard 4 (WebKit); the other cases' allocation shifts as well, so no job time is projected.
+  - **The fit:** at 320×693, German `Gesamt` has 5.8 px from each edge of its 66 px button, which is 0.8 px of slack on each side inside the content box, in the CI image's fonts. That does not establish the fit on iOS.
+  - **Against a 16 px build:** every button's position and size at both widths, the group, the switcher and the pane's vertical scrolling are identical, and the German pane no longer scrolls 2 px sideways at 320 px.
+  - **Labels move:** a label wider than the old content box was start-aligned and is now centred. At 390×844, German `Gesamt` moves 2.4 px and `Anstieg` 1.0 px, and English does not move; at 320×693 labels move 1.8–11.2 px.
+- **The negative control:** with 16 px restored, the German cases failed in both engines at the label-fit assertion, the intended reason: `Gesamt`'s right spare was −5.3 px against at least 2. The English cases failed later, at centring: their labels stayed inside the buttons but start-aligned.
+- **Existing coverage, in Chromium:** passed, namely:
+  - all 12 tests in `ridingMapProfileViews.spec.ts`, its 200% and landscape checks included;
+  - item 80's flush-edge and empty-slot tests in `ridingElevationWindows.spec.ts` and `ridingClimbView.spec.ts`, the latter with the −2 px focus outline at 200%.
+
+  Lint, typecheck and the production build passed. No unit test was added for a CSS layout change, and no full local end-to-end sweep was run.
+
+- **Not established:**
+  - the fit on iOS, given how small the slack is;
+  - the separate 150% Page Zoom layout;
+  - viewports narrower than 320 px;
+  - VoiceOver.
+- **Evidence,** outside the repository: `~/acn-review/item-145-selector/`.

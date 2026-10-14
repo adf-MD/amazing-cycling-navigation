@@ -1,6 +1,6 @@
 # Item 145 — Regular and Larger text modes: support range, Larger size, tests and Settings
 
-**Status (13 October 2026): documentation only. The rider set this direction on 13 October 2026, within [item 145](../../project/backlog.md#item-145). The proposal awaits the rider's review, and nothing is implemented.** P1 and P3 from the [device findings](device-zoom-findings.md) stay paused. The queue stays 145 → 142 → 103 → 120. **CI of this proposal's commit:** run 38389244757 on `1ea3008` failed in Verify and build, on a routing test's timestamp collision unrelated to this proposal, and Deploy was skipped. The test-only repair is recorded in [`current-status.md`](../../project/current-status.md).
+**Status (13 October 2026): documentation only. The rider set this direction on 13 October 2026, within [item 145](../../project/backlog.md#item-145). The proposal awaits the rider's review, and nothing is implemented.** P1 and P3 from the [device findings](device-zoom-findings.md) stay paused. The queue stays 145 → 142 → 103 → 120. **CI of this proposal's commit:** run 38389244757 on `1ea3008` failed in Verify and build, on a routing test's timestamp collision unrelated to this proposal, and Deploy was skipped. The test-only repair is recorded in [`current-status.md`](../../project/current-status.md). **Update, 14 October 2026:** the rider approved only the active Profile selector's 4 px padding from this proposal, and it was implemented for `0.4.70` ([record](../../project/backlog.md#item-145-selector-slice)), with its CI, deployment and phone check pending. The refused Screen on containment and the nine decisions below stay open. Four evidence statements were corrected the same day, with no decision changed: the rider's visibility marks, the unmeasured 360×667 corner, the WebKit cost projection and the selector's label positions at 390×844.
 
 **The direction, as given:**
 
@@ -30,18 +30,18 @@
 2. **Regular already falls short in parts of that range**, on today's build at ordinary text:
    - the refused Screen on retry is cut off at every width in German, and up to 375 px in English;
    - the Profile selector overflows at 320 px in German;
-   - at 320×568, a failed End hides the rider at an imminent turn;
-   - in a location error, the rider is hidden at 320×693, and in German at 375×667 after a failed End; at 320×568 the German map and switcher are lost;
+   - at 320×568, a failed End loses the rider at an imminent turn, to a degree not quantified;
+   - in a location error, the rider is lost at 320×693, and in German at 375×667 after a failed End, to a degree not quantified; at 320×568 the German map and switcher are lost;
    - with a long ride's remaining line, the Screen on toggle would drop below the text in English at 320 px (predicted).
 3. **The selector can be fixed without a second row.**
    - 4 px of inline padding lets German keep the equal quarters at 320 px, with about 1.7 px to spare in the CI image's fonts. That spare is too small to predict iOS.
    - Larger keeps the selector's labels at their Regular size.
-   - No geometry change is needed, and 390×844 is unchanged.
+   - No button moves or resizes. At 390×844 two German labels re-centre, `Gesamt` by 2.4 px and `Anstieg` by 1.0 px; English is unchanged.
 4. **The recommended Larger size is 125%:** a 20 px root from the default 16 px.
    - It enlarges text app-wide, but **holds two riding roles at their Regular size**: the Screen on toggle and the Profile selector's labels.
-   - From 360 px wide and 667 px tall, it keeps the rider, the four map controls, the attribution and the switcher in every plain and failed-End state measured, with no horizontal scrolling.
+   - From 360 px wide and 667 px tall, it keeps the rider, the four map controls, the attribution and the switcher in every plain and failed-End state measured, with no horizontal scrolling. 360×667 itself is a proposed boundary, not a measured size: 360×780 and 375×667 were measured, and neither verifies that combined lower corner.
    - It costs 30–70 px of map against Regular.
-5. **125% does not meet the requirements at 320 px wide.** At 320×693 a failed End at an imminent turn hides the rider, and at 320×568 the rider is hidden before any failure.
+5. **125% does not meet the requirements at 320 px wide.** At 320×693 a failed End at an imminent turn loses the rider, to a degree not quantified, and at 320×568 the rider's disc is clipped to 1 px of its 20 before any failure.
    - **112.5%**, the second candidate, keeps the rider in those states down to 320×693, but is a modest enlargement. Beyond Regular's own conflicts, it adds a few in failure states and at 320×568.
    - Which to choose, and whether Larger's commitment starts at 360 px, is the rider's decision.
 6. **Some failure states conflict in both modes**, within the range: a location error and a refused Screen on, with or without a failed End. So would a long ride's remaining line at the narrowest widths (predicted).
@@ -152,7 +152,22 @@ Every run then failed an End and measured again. So "after" is the failed-End st
 - English and German;
 - Chromium for the matrix, with WebKit spot checks at 390×844 and 320×693.
 
-**"The rider hidden"** means the rider's disc is not wholly inside the visible map. That happens below about 145 px of map ([D4](device-zoom-findings.md#d4--the-route-riding-map-at-the-page-zoom-proxy)).
+**The rider's disc against the visible map** (corrected 14 October 2026). The probe asks whether the rider's disc is wholly inside the visible map.
+
+- **The geometry,** all in viewport px:
+  - the disc is 10 px in radius: the position layer's 8 px circle plus its 2 px stroke, at pitch 0;
+  - its centre is the app's own projection of the position at the last camera settle;
+  - the visible map is the content area's clipped box.
+- **Where the disc is not wholly inside,** the tables mark what the saved records establish:
+  - **✗** wholly outside the visible map;
+  - **◐** partly clipped at its lower edge;
+  - **?** not quantified: the recorded centre predates the map's last resize, so the probe's verdict rests on an earlier position.
+
+  A 0 px map shows nothing, the rider included.
+
+- **In the prose,** "hides" means ✗, "clips" ◐, and "loses" any case the probe marked.
+- **Map height alone does not decide which.** Established hiding was measured at 3–128 px of map, and established clipping at 131–149 px.
+- **This reads the saved records only;** see [Reproducing](#reproducing).
 
 **WebKit agreed exactly.** At 390×844 and 320×693, in both languages, at 100% and 125% on prototype T, WebKit matched Chromium in every one of the 64 compared states: the map height, the rider, the switcher and the card. The selector's geometry was identical too.
 
@@ -160,14 +175,14 @@ Every run then failed an End and measured again. So "after" is the failed-End st
 
 ## Regular across the range, today
 
-**Today's build at ordinary text.** The figures are German map heights in px, before → after a failed End. English is in brackets where shown, and always where its outcome differs. ✗ marks a hidden rider.
+**Today's build at ordinary text.** The figures are German map heights in px, before → after a failed End. English is in brackets where shown, and always where its outcome differs. ✗, ◐ and ? are as defined in [Method](#method).
 
 | Size    | Imminent turn     | GPX, first ten seconds | Free roam | Location error                  | Refused Screen on: retry on screen |
 | ------- | ----------------- | ---------------------- | --------- | ------------------------------- | ---------------------------------- |
-| 320×568 | 168 → 116✗ (137✗) | 203 → 151              | 382 → 330 | **0, switcher off** (73✗ → 21✗) | 28% (51%); map 53✗ → 1✗            |
-| 320×693 | 232 → 180         | 267 → 215              | 480 → 428 | 53✗ → 1✗ (137✗ → 85✗)           | 28% (51%); map 117✗ → 65✗          |
+| 320×568 | 168 → 116? (137?) | 203 → 151              | 382 → 330 | **0, switcher off** (73✗ → 21✗) | 28% (51%); map 53✗ → 1?            |
+| 320×693 | 232 → 180         | 267 → 215              | 480 → 428 | 53? → 1? (137? → 85?)           | 28% (51%); map 117✗ → 65?          |
 | 360×780 | 400 → 348         | 435 → 383              | 614 → 562 | 305 → 253                       | 45% (83%)                          |
-| 375×667 | 288 → 236         | 302 → 250              | 481 → 429 | 172 → 120✗ (193 → 159)          | 51% (95%); map 173 → 121✗          |
+| 375×667 | 288 → 236         | 302 → 250              | 481 → 429 | 172 → 120? (193 → 159)          | 51% (95%); map 173 → 121?          |
 | 390×844 | 404 → 352         | 418 → 366              | 631 → 579 | 288 → 236                       | 58% (whole)                        |
 | 412×839 | 480 → 428         | 494 → 442              | 673 → 621 | 364 → 312                       | 67% (whole)                        |
 | 440×956 | 504 → 452         | 537 → 485              | 731 → 679 | 388 → 336                       | 79% (whole)                        |
@@ -201,7 +216,7 @@ In a location error the Follow and North-up controls are hidden by design.
 
 **What changes and what does not:**
 
-- Button boxes are identical to today's at every width. The labels are centred in them as now, so 390×844 looks unchanged.
+- Button boxes are identical to today's at every width. **Corrected 14 October 2026:** the labels are not all centred today. A label wider than the room 16 px of padding leaves is start-aligned, so with 4 px it moves to the centre: at 390×844 German `Gesamt` by 2.4 px and `Anstieg` by 1.0 px, while English does not move. This was measured with the implementation ([record](../../project/backlog.md#item-145-selector-slice)).
 - The selected ring and the −2 px focus outline sit on the border box, which does not change.
 - **The slack at 320 px is small.** If iOS's German `Gesamt` is more than about 1.7 px wider than the container's, it spills again by that much. The device check is the test.
 
@@ -231,8 +246,8 @@ It was not prototyped.
 
 | Size    | Regular    | Larger 112.5% | Larger 125%             |
 | ------- | ---------- | ------------- | ----------------------- |
-| 320×568 | 168 → 116✗ | 149✗ → 91✗    | 131✗ → 46✗ (131✗ → 69✗) |
-| 320×693 | 232 → 180  | 213 → 155     | 195 → 110✗ (195 → 133✗) |
+| 320×568 | 168 → 116? | 149◐ → 91?    | 131◐ → 46? (131◐ → 69?) |
+| 320×693 | 232 → 180  | 213 → 155     | 195 → 110? (195 → 133?) |
 | 360×780 | 400 → 348  | 381 → 323     | 363 → 301               |
 | 375×667 | 288 → 236  | 248 → 190     | 230 → 168               |
 | 390×844 | 404 → 352  | 364 → 306     | 346 → 284               |
@@ -241,11 +256,11 @@ It was not prototyped.
 
 **The GPX notice's first ten seconds**, before → after a failed End:
 
-| Size    | Regular   | Larger 112.5%           | Larger 125%            |
-| ------- | --------- | ----------------------- | ---------------------- |
-| 320×568 | 203 → 151 | 163 → 105✗ (185 → 127✗) | 148 → 63✗ (172 → 110✗) |
-| 320×693 | 267 → 215 | 227 → 169               | 212 → 127✗ (236 → 174) |
-| 375×667 | 302 → 250 | 284 → 226               | 247 → 185              |
+| Size    | Regular   | Larger 112.5%           | Larger 125%             |
+| ------- | --------- | ----------------------- | ----------------------- |
+| 320×568 | 203 → 151 | 163 → 105? (185 → 127?) | 148◐ → 63? (172 → 110?) |
+| 320×693 | 267 → 215 | 227 → 169               | 212 → 127✗ (236 → 174)  |
+| 375×667 | 302 → 250 | 284 → 226               | 247 → 185               |
 
 At 360×780 and from 390 px wide, every case is above 300 px.
 
@@ -261,8 +276,8 @@ Wherever the rider was shown, the four map controls were whole, and so was the a
 
 **Reading the two candidates:**
 
-- **125%,** from 360 px wide and 667 px tall: every plain and failed-End state measured keeps the rider, the four map controls and the switcher. At 320 px wide it hides the rider after a failed End (320×693), or before any failure (320×568).
-- **112.5%** keeps the rider in those states down to 320×693. At 320×568, its imminent turn is at the edge: 149 px, just short of the rider.
+- **125%,** from 360 px wide and 667 px tall: every plain and failed-End state measured keeps the rider, the four map controls and the switcher. That lower corner, 360×667, is proposed, not measured: 360×780 and 375×667 do not verify it together. At 320 px wide it loses the rider after a failed End (320×693, to a degree not quantified), and clips it before any failure (320×568, 1 px of 20 showing).
+- **112.5%** keeps the rider in those states down to 320×693. At 320×568, its imminent turn is at the edge: 149 px, which clips 1 px off the rider's disc.
   - **Beyond Regular's own conflicts, it adds** ([below](#failure-states-in-both-modes)):
     - at 320×568, the imminent turn before any failure, the GPX notice after a failed End, and the English switcher in the location-error and refused states;
     - at 320×693, the German switcher partly off screen after a failed End in a location error;
@@ -311,20 +326,20 @@ Map heights in px, German before → after a failed End. English is in brackets 
 
 | Size    | Location error, Regular     | Location error, 112.5%                       | Location error, 125%       | Refused Screen on, Regular           | Refused, 112.5%           | Refused, 125%                                     |
 | ------- | --------------------------- | -------------------------------------------- | -------------------------- | ------------------------------------ | ------------------------- | ------------------------------------------------- |
-| 320×568 | 0, switcher off (73✗ → 21✗) | 0, switcher off                              | 0, switcher off            | 27✗ → 0, switcher part off (48✗ → 0) | 5✗ → 0, switcher part off | 0, switcher off                                   |
-| 320×693 | 53✗ → 1✗ (137✗ → 85✗)       | 0, switcher part off after the End (49✗ → 0) | 0, switcher off            | 91✗ → 39✗ (112✗ → 60✗)               | 69✗ → 11✗                 | 6✗ → 0, switcher part off after the End (26✗ → 0) |
-| 360×780 | 305 → 253                   | 280 → 222                                    | **144✗ → 82✗** (257 → 195) | 259 → 207                            | 237 → 179                 | 217 → 155                                         |
-| 375×667 | 172 → 120✗ (193 → 159)      | 147✗ → 89✗                                   | 97✗ → 35✗ (124✗ → 62✗)     | 147✗ → 95✗                           | 104✗ → 46✗ (128✗ → 70✗)   | 84✗ → 22✗ (111✗ → 49✗)                            |
-| 390×844 | 288 → 236                   | 263 → 205                                    | 240 → 178                  | 263 → 211                            | 220 → 162                 | 200 → 138✗ (227 → 165)                            |
+| 320×568 | 0, switcher off (73✗ → 21✗) | 0, switcher off                              | 0, switcher off            | 27✗ → 0, switcher part off (48✗ → 0) | 5? → 0, switcher part off | 0, switcher off                                   |
+| 320×693 | 53? → 1? (137? → 85?)       | 0, switcher part off after the End (49? → 0) | 0, switcher off            | 91✗ → 39? (112✗ → 60?)               | 69✗ → 11?                 | 6✗ → 0, switcher part off after the End (26✗ → 0) |
+| 360×780 | 305 → 253                   | 280 → 222                                    | **144? → 82?** (257 → 195) | 259 → 207                            | 237 → 179                 | 217 → 155                                         |
+| 375×667 | 172 → 120? (193 → 159)      | 147? → 89?                                   | 97? → 35? (124? → 62?)     | 147◐ → 95✗                           | 104✗ → 46? (128✗ → 70?)   | 84✗ → 22? (111✗ → 49?)                            |
+| 390×844 | 288 → 236                   | 263 → 205                                    | 240 → 178                  | 263 → 211                            | 220 → 162                 | 200 → 138◐ (227 → 165)                            |
 | 412×839 | 364 → 312                   | 339 → 281                                    | 316 → 254                  | 339 → 287                            | 320 → 262                 | 276 → 214                                         |
 | 440×956 | 388 → 336                   | 363 → 305                                    | 340 → 278                  | 363 → 311                            | 344 → 286                 | 327 → 265                                         |
 
 **What these show:**
 
 - **Containment costs 24–26 px in Regular.** It makes the retry whole and tappable everywhere; on today's build, the German retry is 28–79% on screen.
-  - Before containment, the refused state already hid the rider at 320 px wide, and at 375×667 after a failed End.
-  - Containment also hides it at 375×667 before any End: 173 → 147 px.
-- **These are not rare exceptions to be waived.** The rider has not approved compound-failure exceptions. Each row with ✗ or a lost switcher inside the commitment is listed under the decisions.
+  - Before containment, the refused state already hid the rider at 320 px wide, and lost it after a failed End there and at 375×667, to a degree not quantified.
+  - Containment also clips it at 375×667 before any End: 173 → 147 px, with 17 of the disc's 20 px showing.
+- **These are not rare exceptions to be waived.** The rider has not approved compound-failure exceptions. Each row with ✗, ◐, ? or a lost switcher inside the commitment is listed under the decisions.
 - **No small layout change was found for them.** The larger options recorded in the [device findings](device-zoom-findings.md#the-map-at-150-page-zoom-no-small-change) still apply:
   - the follow anchor and floor taken from the visible region;
   - a height-gated presentation (E2's territory, unapproved);
@@ -348,7 +363,7 @@ For a long ride's line, the figure in brackets is how far the row is short (wrap
 
 **Where the toggle drops, the card grows by about 70 px** (measured: 95 → 165 px).
 
-- **Regular at 320 px in English:** a long ride would lose those 70 px. By the imminent-turn figures, that would hide the rider after a failed End at 320×693 (about 110 px).
+- **Regular at 320 px in English:** a long ride would lose those 70 px. By the imminent-turn figures, that would lose the rider after a failed End at 320×693 (about 110 px).
 - **Larger 125% at 360 px in English:** the same drop would still leave about 260 px after a failed End at 360×780.
 - **Holding the toggle at Regular size** is what keeps 375 px clear at 125%.
 
@@ -392,7 +407,7 @@ At the default text size and 100% page zoom:
 - **The Profile selector's buttons:** 4 px inline padding in the active pane, in place of 16 px.
   - Identical boxes and positions at every width.
   - Labels that today spill now fit, at 320 px in German.
-- **The refused Screen on control is kept inside the card.** The retry is whole, for 24–26 px of map while a request is refused. At 375×667 that hides the rider in the refused state before any failed End, as it already is after one.
+- **The refused Screen on control is kept inside the card.** The retry is whole, for 24–26 px of map while a request is refused. At 375×667 that clips the rider in the refused state before any failed End; after one, the rider is already lost.
 - **Nothing else.** Every other state at every size measured identical in map height, card and controls.
 - **At 390×844 specifically,** only the refused state changes: 289 → 263 px before a failed End, retry whole.
 
@@ -435,7 +450,7 @@ At the default text size and 100% page zoom:
 - **`CLAUDE.md`'s item 115 account** calls the automated 200% coverage "the project's enlarged-text evidence". Once the modes ship, that becomes Larger's coverage.
 - **`androidMobileLayout.spec.ts`'s comment** says the same, and would need the same revision.
 
-**Expected WebKit cost overall:** about +130 s of summed test time, roughly 33 s per shard at two workers, or about 16 s of wall-clock per shard. That is if the Planning matrix is replaced like for like; trimming it could offset the cost.
+**Expected WebKit cost overall:** about +130 s of summed test time, if the Planning matrix is replaced like for like; trimming it could offset the cost. Its effect on job time depends on which shards the cases fall into, so it needs the actual case allocation and is not projected here (corrected 14 October 2026).
 
 ## Settings: presentation and explanation
 
@@ -482,7 +497,7 @@ These stay recorded findings, independent of the remedies proposed here:
 - **The Profile selector overflow** under Display Zoom and page zoom ([D3](device-zoom-findings.md#d3--the-profile-range-selector)).
 - **The page-zoom map loss** at the 260×563 proxy ([D4](device-zoom-findings.md#d4--the-route-riding-map-at-the-page-zoom-proxy)). Outside the commitment, but not acceptance.
 - **The attribution over the rider** in short maps ([first report](README.md#5-a-pre-existing-conflict-the-attribution-over-the-rider-at-200)).
-- **The refused Screen on retry cut off at ordinary text.** It is an in-range Regular defect, independent of enlargement. P3 unchanged is not adopted: in Regular, its containment costs 24–26 px and hides the rider at 375×667. The same rule is evaluated above within the commitment, for decision.
+- **The refused Screen on retry cut off at ordinary text.** It is an in-range Regular defect, independent of enlargement. P3 unchanged is not adopted: in Regular, its containment costs 24–26 px and clips the rider at 375×667. The same rule is evaluated above within the commitment, for decision.
 - **The navigation label wrap** stays a proposed input to [item 103](../../project/backlog.md#item-103). Items 113 and 121 are not reopened.
 
 ## Recommended next slice
@@ -553,4 +568,5 @@ All evidence is outside the repository, in `~/acn-review/item-145/`:
   - `out/41-screens-*`, the non-riding screens;
   - `out/42-rootmode-*`, the root rule;
   - `out/43-enlarged-test-timing.txt`, the CI timing estimate.
+- **The rider reclassification (14 October 2026),** from the saved records only: `~/acn-review/item-145-selector/rider-class.py` and `rider-cells.py`.
 - **Superseded, kept:** two runs whose names record a probe error, `41-screens-base-route-name-error` and `41-screens-base-lang-check-error`, and the first wrap measurement, which measured text alone, as `40-x-superseded-wrap*`.
