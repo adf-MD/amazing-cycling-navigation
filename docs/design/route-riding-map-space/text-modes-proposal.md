@@ -1,6 +1,6 @@
 # Item 145 — Regular and Larger text modes: support range, Larger size, tests and Settings
 
-**Status (13 October 2026): documentation only. The rider set this direction on 13 October 2026, within [item 145](../../project/backlog.md#item-145). The proposal awaits the rider's review, and nothing is implemented.** P1 and P3 from the [device findings](device-zoom-findings.md) stay paused. The queue stays 145 → 142 → 103 → 120. **CI of this proposal's commit:** run 38389244757 on `1ea3008` failed in Verify and build, on a routing test's timestamp collision unrelated to this proposal, and Deploy was skipped. The test-only repair is recorded in [`current-status.md`](../../project/current-status.md). **Update, 14 October 2026:** the rider approved only the active Profile selector's 4 px padding from this proposal, and it was implemented for `0.4.70` ([record](../../project/backlog.md#item-145-selector-slice)), with its CI, deployment and phone check pending. The refused Screen on containment and the nine decisions below stay open. Four evidence statements were corrected the same day, with no decision changed: the rider's visibility marks, the unmeasured 360×667 corner, the WebKit cost projection and the selector's label positions at 390×844.
+**Status (13 October 2026): documentation only. The rider set this direction on 13 October 2026, within [item 145](../../project/backlog.md#item-145). The proposal awaits the rider's review, and nothing is implemented.** P1 and P3 from the [device findings](device-zoom-findings.md) stay paused. The queue stays 145 → 142 → 103 → 120. **CI of this proposal's commit:** run 38389244757 on `1ea3008` failed in Verify and build, on a routing test's timestamp collision unrelated to this proposal, and Deploy was skipped. The test-only repair is recorded in [`current-status.md`](../../project/current-status.md). **Update, 14 October 2026:** the rider approved only the active Profile selector's 4 px padding from this proposal, and it shipped in `0.4.70` and was accepted on the installed iPhone the same day ([record](../../project/backlog.md#item-145-selector-slice)). The refused Screen on containment and the nine decisions below stay open; a different design for the refused state is proposed in [refused Screen on](refused-screen-on.md). Four evidence statements were corrected the same day, with no decision changed: the rider's visibility marks, the unmeasured 360×667 corner, the WebKit cost projection and the selector's label positions at 390×844. The marks' geometry was then corrected again, because it had assumed pitch 0.
 
 **The direction, as given:**
 
@@ -155,19 +155,19 @@ Every run then failed an End and measured again. So "after" is the failed-End st
 **The rider's disc against the visible map** (corrected 14 October 2026). The probe asks whether the rider's disc is wholly inside the visible map.
 
 - **The geometry,** all in viewport px:
-  - the disc is 10 px in radius: the position layer's 8 px circle plus its 2 px stroke, at pitch 0;
+  - the disc is the position layer's 8 px circle plus its 2 px stroke. **Corrected:** this first said pitch 0 and a 10 px radius, but the follow camera is tilted 35°. The [refused Screen on](refused-screen-on.md) probe of 14 October 2026 measured the painted disc at 9.4–11.25 px in radius at the follow anchor. Every ✗ and ◐ below holds across that range except Regular's 151 px at 320×568, now marked ?;
   - its centre is the app's own projection of the position at the last camera settle;
   - the visible map is the content area's clipped box.
 - **Where the disc is not wholly inside,** the tables mark what the saved records establish:
   - **✗** wholly outside the visible map;
   - **◐** partly clipped at its lower edge;
-  - **?** not quantified: the recorded centre predates the map's last resize, so the probe's verdict rests on an earlier position.
+  - **?** not quantified: the recorded centre predates the map's last resize, so the probe's verdict rests on an earlier position, or the measured radius range leaves the verdict open.
 
-  A 0 px map shows nothing, the rider included.
+  A 0 px map shows nothing, the rider included. These marks concern the map's edges only: in short maps the attribution can also cover the rider, as the refused Screen on probe found.
 
 - **In the prose,** "hides" means ✗, "clips" ◐, and "loses" any case the probe marked.
 - **Map height alone does not decide which.** Established hiding was measured at 3–128 px of map, and established clipping at 131–149 px.
-- **This reads the saved records only;** see [Reproducing](#reproducing).
+- **The marks read the saved records,** with the disc's radius taken from the 14 October measurement; see [Reproducing](#reproducing).
 
 **WebKit agreed exactly.** At 390×844 and 320×693, in both languages, at 100% and 125% on prototype T, WebKit matched Chromium in every one of the 64 compared states: the map height, the rider, the switcher and the card. The selector's geometry was identical too.
 
@@ -179,7 +179,7 @@ Every run then failed an End and measured again. So "after" is the failed-End st
 
 | Size    | Imminent turn     | GPX, first ten seconds | Free roam | Location error                  | Refused Screen on: retry on screen |
 | ------- | ----------------- | ---------------------- | --------- | ------------------------------- | ---------------------------------- |
-| 320×568 | 168 → 116? (137?) | 203 → 151              | 382 → 330 | **0, switcher off** (73✗ → 21✗) | 28% (51%); map 53✗ → 1?            |
+| 320×568 | 168 → 116? (137?) | 203 → 151?             | 382 → 330 | **0, switcher off** (73✗ → 21✗) | 28% (51%); map 53✗ → 1?            |
 | 320×693 | 232 → 180         | 267 → 215              | 480 → 428 | 53? → 1? (137? → 85?)           | 28% (51%); map 117✗ → 65?          |
 | 360×780 | 400 → 348         | 435 → 383              | 614 → 562 | 305 → 253                       | 45% (83%)                          |
 | 375×667 | 288 → 236         | 302 → 250              | 481 → 429 | 172 → 120? (193 → 159)          | 51% (95%); map 173 → 121?          |
@@ -256,11 +256,11 @@ It was not prototyped.
 
 **The GPX notice's first ten seconds**, before → after a failed End:
 
-| Size    | Regular   | Larger 112.5%           | Larger 125%             |
-| ------- | --------- | ----------------------- | ----------------------- |
-| 320×568 | 203 → 151 | 163 → 105? (185 → 127?) | 148◐ → 63? (172 → 110?) |
-| 320×693 | 267 → 215 | 227 → 169               | 212 → 127✗ (236 → 174)  |
-| 375×667 | 302 → 250 | 284 → 226               | 247 → 185               |
+| Size    | Regular    | Larger 112.5%           | Larger 125%             |
+| ------- | ---------- | ----------------------- | ----------------------- |
+| 320×568 | 203 → 151? | 163 → 105? (185 → 127?) | 148◐ → 63? (172 → 110?) |
+| 320×693 | 267 → 215  | 227 → 169               | 212 → 127✗ (236 → 174)  |
+| 375×667 | 302 → 250  | 284 → 226               | 247 → 185               |
 
 At 360×780 and from 390 px wide, every case is above 300 px.
 
@@ -501,6 +501,8 @@ These stay recorded findings, independent of the remedies proposed here:
 - **The navigation label wrap** stays a proposed input to [item 103](../../project/backlog.md#item-103). Items 113 and 121 are not reopened.
 
 ## Recommended next slice
+
+**Update, 14 October 2026:** the rider approved the selector's padding alone. It shipped in `0.4.70` and passed its phone check ([record](../../project/backlog.md#item-145-selector-slice)). The refused retry's containment below stays unapproved, and a different design for the refused state is now proposed in [refused Screen on](refused-screen-on.md). The rest of this section is the 13 October recommendation, unchanged.
 
 **One implementation slice for the selector and the refused retry in Regular**, the two in-range ordinary-text defects:
 

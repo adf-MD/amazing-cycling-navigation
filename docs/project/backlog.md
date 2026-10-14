@@ -702,13 +702,20 @@ _Category: Riding presentation_
          - the departures from item 146 are named.
        - **Recommended next slice:** the selector's padding and the refused Screen on control's containment, in Regular, before the modes.
        - **Nothing is implemented or approved.**
-     - **Selector padding slice, 14 October 2026 — implemented for `0.4.70`; CI, deployment and the installed-iPhone check pending** ([record](#item-145-selector-slice)). The rider approved the active Profile selector's 4 px padding alone on 13 October 2026; everything else above stays undecided.
+     - **Selector padding slice, 14 October 2026 — shipped in `0.4.70` and accepted on the installed iPhone, reported the same day** ([record](#item-145-selector-slice)). The rider approved the active Profile selector's 4 px padding alone on 13 October 2026; everything else above stays undecided.
+     - **The refused Screen on state, a design proposal, 14 October 2026 — documentation only; it awaits the rider's review** ([proposal](../design/route-riding-map-space/refused-screen-on.md)). Measured with a simulated refusal in the CI image, in Chromium and WebKit, at 390×844, 375×667 and 320×693, in English and German.
+       - **Two candidates, confined to the refused state:**
+         - A: the message and retry on a full-width row of the card, layout only;
+         - B: A with the existing shorter label, "Try again" / "Erneut versuchen".
+       - **B is preferred:** the retry whole and operable, Screen on in place, the ordinary layout unchanged, and 63 px of map given back in German against today.
+       - **Four reference cases still lose part or all of the rider:** German refused at 320×693, and refused with a failed End at 375×667 German and at 320×693. The causes are the pre-existing attribution over the rider in short maps and two failure rows together.
+       - **The decisions** on the copy and on those four cases are the rider's. Nothing is implemented.
 
 <a id="item-145-selector-slice"></a>
 
 ### Selector padding slice — implemented for `0.4.70` (14 October 2026)
 
-**Approved by the rider on 13 October 2026, narrower than the proposal's recommended slice, and implemented on 14 October 2026. CI, deployment and the installed-iPhone check are pending** ([checklist](current-status.md#session-1--stationary-on-the-installed-home-screen-pwa)). Item 145 stays open.
+**Approved by the rider on 13 October 2026, narrower than the proposal's recommended slice, and implemented on 14 October 2026. Deployed by CI run 38535923412 and accepted on the installed iPhone, reported 14 October 2026** ([dated record](current-status.md#installed-iphone-acceptance-of-0470-build-5209fe7-item-145s-selector-reported-14-october-2026)). Item 145 stays open.
 
 - **The change:** in the active Profile pane only, the range buttons' inline padding is `--space-4` (4 px), in place of the global button rule's 16 px (`src/index.css`). The four-column grid, its spacing, the vertical padding, the minimum sizes, the inset selected ring, the inward focus outline, the labels and the actions are unchanged, as are the shared button rule and the pre-ride selector. The version is `0.4.70`.
 - **Not included:** the refused Screen on control's containment, which clips the rider at 375×667 and stays undecided; the Regular and Larger modes, the root rule and the Settings card; P1, P3, E2, E2+N, a hidden ascent, extra Screen on taps, support-range exceptions and test retirement.
@@ -735,3 +742,5 @@ _Category: Riding presentation_
   - viewports narrower than 320 px;
   - VoiceOver.
 - **Evidence,** outside the repository: `~/acn-review/item-145-selector/`.
+- **CI and deployment, 14 October 2026:** run 38535923412 passed every job: Verify and build 316 s; shards 687, 917, 516 and 824 s; Deploy 13 s. The bounded waiter found the live site serving `0.4.70` / `5209fe7`.
+- **Installed-iPhone acceptance, reported 14 October 2026:** on an iPhone 13 on iOS 26.6.1, with `0.4.70` / `5209fe7` read from Status, every check passed: labels fit, one row, working buttons, no overflow, the switcher visible and no newly introduced scrolling. German was checked under ordinary and enlarged Display Zoom ([dated record](current-status.md#installed-iphone-acceptance-of-0470-build-5209fe7-item-145s-selector-reported-14-october-2026)). VoiceOver, physical Android and 150% Page Zoom are not covered. `677a03e` remains the broad phone-accepted build.
