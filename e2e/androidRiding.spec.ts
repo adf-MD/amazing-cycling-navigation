@@ -248,9 +248,7 @@ test("a rejecting Wake Lock request surfaces the existing retry state without cr
   const retryAlert = page.getByRole("alert");
   await expect(retryAlert).toBeVisible();
   await expect(retryAlert.getByText("The screen could not be kept awake.")).toBeVisible();
-  await expect(
-    retryAlert.getByRole("button", { name: "Tap to try again" }),
-  ).toBeVisible();
+  await expect(retryAlert.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(page.locator('[data-testid="map-container"] canvas')).toBeVisible();
 
   expect(unexpectedOpenFreeMapRequests).toEqual([]);

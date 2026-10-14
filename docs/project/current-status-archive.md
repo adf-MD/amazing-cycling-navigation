@@ -1,6 +1,6 @@
-# Current status — archive: dated records from 6 October back to 10 September 2026
+# Current status — archive: dated records from 7 October back to 10 September 2026
 
-This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026, on 7 October 2026 the four of 4 October 2026, and on 9 October 2026 the three of 6 October 2026 and the two of 5 October 2026 that now open it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
+This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026, on 7 October 2026 the four of 4 October 2026, on 9 October 2026 the three of 6 October 2026 and the two of 5 October 2026, and on 14 October 2026 item 139's record of 7 October 2026, which now opens it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
 
 **Where the moved text's positional references now point.** These records stood in `current-status.md` after its newer dated records and before its per-item entries from item 114 onwards, and their wording is kept exactly as written. Read them like this:
 
@@ -10,6 +10,7 @@ This file is **the continuation of [`current-status.md`](current-status.md)'s da
 - **In the seven records of 30 September and 1 October 2026, moved on 5 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist above" means `current-status.md`'s open checklist; "the item 102 entry below" means `current-status.md`'s per-item entry for item 102; and "the mouse double-click observation above" means the observation from automated testing in `current-status.md`'s checklist section. Their references to one another, such as "the `0.4.47` finding below", still point within this file.
 - **In the six records of 2 October 2026, moved on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; and "the item 132 checks above" means that Session 5's checks, listed in the same record. Their references to one another, such as the `0.4.53` record's "that observation is kept below", still point within this file.
 - **In the four records of 4 October 2026, moved on 7 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; "the next checklist", in the `0.4.61` record, means the session written for the following slice, since completed and removed. The P-01 observation's "the slice 9 acceptance below" still points within this file, to the record that follows it.
+- **In item 139's record of 7 October 2026, moved on 14 October 2026:** "Session 5" means item 139's own checklist session of that time, since completed and removed, and "the checklist" means `current-status.md`'s open checklist.
 - **In the five records of 5 and 6 October 2026, moved on 9 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed, and "the opportunistic monitoring above" means `current-status.md`'s opportunistic-monitoring list. Their references to one another still point within this file.
 - **In the six records of 3 October 2026, moved later on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist. Their references to one another, such as "the C-09 report above" and "D-02's acceptance below", still point within this file.
 - **"Item 115's installed-iPhone presentation checklist below"**, in the 12 September 2026 bicycle field test — the per-item checklists of that time, since consolidated into `current-status.md`'s Sessions 2 and 3.
@@ -17,6 +18,33 @@ This file is **the continuation of [`current-status.md`](current-status.md)'s da
 Links in these records are relative to `docs/project/`, as they were, and still resolve.
 
 ---
+
+### Installed-iPhone acceptance of `0.4.68` (build `9334b25`, item 139, reported 7 October 2026)
+
+**Device and build.** The installed Home Screen PWA, in English and German. The report names no version or build; `0.4.68`, build `9334b25`, is the build the checklist was written for and the one deployed when the report was made, and this record does not claim that either was read from the device. It names no phone model or iOS version, and none is assumed. The session specified stationary use in portrait at ordinary text, and the report does not restate those conditions. **The accepted build is `9334b25`**, and it stays so when later deployments change the deployed build ID; item 134's accepted build stays `9f73242`.
+
+**The rider's report, verbatim:**
+
+> All checks pass in English and German.
+
+That is item 139's Session 5, so its checks are complete for this device and the session has been removed from the checklist. Its six checks were, in route riding and then in free roam:
+
+- **End ride, then Cancel:** `End ride` / `Beenden` in the riding header, then `Cancel` / `Abbrechen` — `Pause`, the title and `End ride` / `Beenden` staying where they were, and the ride continuing;
+- **End ride confirmed** with `End ride` / `Fahrt beenden`: `Ride` / `Fahren` then showing `Choose a route` / `Route wählen`;
+- **Nothing comes back:** after fully closing and reopening the app, `Ride` / `Fahren` offering nothing to resume.
+
+This **accepts the ordinary flows of item 139 on `0.4.68`**, at product level, in English and German, and completes item 139 within its approved scope ([history](history/items-132-147.md#item-139)).
+
+**Automated evidence only**, as the session listed it: a failed End's error on its own row below the header — its rendering, wrapping and geometry, with Pause, the title and End ride unmoved — at ordinary and 200% root text, and the retry after a failure. A clear cannot be made to fail through the installed PWA's interface, so this report is not physical-device evidence of any of them.
+
+**Not established:**
+
+- **VoiceOver** remains unverified: this report supplies no VoiceOver result.
+- **The route-riding map loss at 200% root text** — measured in browsers at 174 → 86 px in English and 134 → 10 px in German — is unresolved and not accepted. It is now unscheduled [item 145](backlog.md#item-145).
+
+**Not inferred:** any phone model, iOS version or measured geometry; physical Larger Text or iOS Larger Text; landscape; physical Android.
+
+**Separate, automated evidence only.** The component and browser tests and their negative control stay as recorded in [item 139's history](history/items-132-147.md#item-139), with CI run 37499907118, which deployed `9334b25`.
 
 ### Installed-iPhone acceptance of `0.4.67` (build `9f73242`, item 134, reported 6 October 2026)
 

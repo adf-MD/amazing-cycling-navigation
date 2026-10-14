@@ -1,6 +1,6 @@
 # Item 145 — the refused Screen on state: a design proposal
 
-**Status (14 October 2026): documentation only. The proposal awaits the rider's review, and nothing is implemented.** It is part of [item 145](../../project/backlog.md#item-145). The queue stays 145 → 142 → 103 → 120. The containment measured earlier (P3, in the [text-mode proposal](text-modes-proposal.md#failure-states-in-both-modes)) is not approved and is not proposed here.
+**Status (14 October 2026): the rider approved candidate B for the retry correction, with the wording "Try again" / "Erneut versuchen". It is implemented for `0.4.71` ([record](../../project/backlog.md#item-145-refused-screen-on-slice)), with CI, deployment and the phone check pending. Measured with the probe below, the implemented build is box for box identical to B's prototype in all 92 snapshots. The four cases under [What remains in conflict](#what-remains-in-conflict) stay open: their partial or complete loss of the rider is not accepted.** It is part of [item 145](../../project/backlog.md#item-145). The queue stays 145 → 142 → 103 → 120. The containment measured earlier (P3, in the [text-mode proposal](text-modes-proposal.md#failure-states-in-both-modes)) is not approved and is not proposed here.
 
 **What this rests on.**
 
@@ -139,31 +139,33 @@ Four reference cases keep the rider short of whole even with B, and A adds two m
 | 320×693, German  | refused, then a failed End | hidden by the map edge; attribution hidden | hidden | hidden |
 | 320×693, English | refused, then a failed End | 9–13%; attribution 84% visible             | 9–13%  | hidden |
 
-**None of these is introduced by a candidate.** Each is better than today, and none worsens any other measured state. Two causes remain, and neither is the refused row's arrangement:
+**None of these is introduced by a candidate.** Each is better than today, and none worsens any other measured state, but **neither of the two investigated arrangements resolves every case.** The remaining problem has two parts:
 
-- **The attribution over the rider in short maps is pre-existing.** The ordinary failed End at 320×693 in German already leaves only 70–72% of the rider visible. B's refused state there is exactly that, because its refused row costs the same 52 px as a failed End's German error row.
-- **Two failure rows together leave too little map at these sizes.** A refused row needs at least a 44 px retry, so it cannot cost less than about 48 px. From the recorded anchor and attribution boxes, the rider would clear the attribution with about 12–16 px more map at 320×693 German (refused) and 8–12 px more at 375×667 German (refused, then a failed End). With a failed End at 320×693, the map element is already at its 160 px floor, with only 128 px of it visible in German.
+- **The attribution covers the rider in short maps, and that is pre-existing.** The ordinary failed End at 320×693 in German already leaves only 70–72% of the rider visible. B's refused state there is exactly that, because its refused row costs the same 52 px as a failed End's German error row.
+- **Two failure rows together leave too little map at these sizes.** A refused row needs at least a 44 px retry, so it cannot cost less than about 48 px. From the recorded anchor and attribution boxes, the rider would clear the attribution with about 12–16 px more map at 320×693 German (refused) and 8–12 px more at 375×667 German (refused, then a failed End). With a failed End at 320×693, the map element is already at its 160 px floor, with only 128 px of it visible in German, and the rider falls outside the visible map.
+
+**They need designing together.** Moving the attribution alone cannot recover a rider who is outside the visible map. A subsequent design must consider the rider's position within the visible map, the map's 160 px floor and the overlays' placement together.
 
 The applicable map controls stayed whole in every B case. A's taller German row cuts the lower map controls at 320×693 after a failed End (79% visible). The attribution is clipped in the compound 320×693 cases in all three builds.
 
 ## Recommendation
 
-**B is the preferred design**, on these conditions:
+**B was the preferred design**, on these conditions:
 
 - **What it achieves, in every reference case:** the retry is whole, readable and operable, Screen on stays where it is, the ascent and switcher stay in view, and the ordinary and recovered layouts are unchanged.
 - **The map:** it gives back 63 px in German's refused state against today (37 px with A), and costs 52 px against the ordinary state: as much as a failed End's error row in German, against 34 px in English.
 - **Over A,** it keeps 26 px more map in German, which lifts the rider from 9–13% to 70–72% at 320×693 refused and from 64% to 93–95% at 375×667 after a failed End.
 
-**It does not meet every constraint.** The four cases above still lose part or all of the rider. B is therefore not recommended as a complete solution; it needs the decision below.
+**It does not meet every constraint.** The four cases above still lose part or all of the rider. B was therefore not recommended as a complete solution, and it needed the decision below.
 
-**The decision needed before implementation:**
+**The decision needed before implementation.** On 14 October 2026 the rider approved B and its wording for the retry correction (point 1), and kept the four cases open (point 2):
 
 1. **The copy:** B's "Try again" / "Erneut versuchen", or A's layout with today's label at 26 px more map in German.
 2. **The four remaining cases:** a refused Screen on in German at 320×693, and a refused Screen on together with a failed End at 375×667 German and 320×693 in both languages.
    - **Accept** that the rider can be partly or wholly hidden there, as the ordinary failed End already leaves it 70–72% visible at 320×693 German; or
    - **ask for a separate design** for the attribution over the rider in short maps, an already-recorded item 145 finding.
 
-   No exception is assumed, and no in-card arrangement of the refused row resolves them.
+   No exception is assumed, and neither of the two investigated arrangements resolves them.
 
 ## Limitations
 
@@ -184,4 +186,4 @@ Everything is outside the repository, in `~/acn-review/item-145-retry/`:
   - `out/11-free-*`, the free-roam rerun;
   - `out/table-*.txt` and `out/equivalence.txt`.
 - **Scripts:** `scripts/analyse.py`, `table.py`, `equivalence.py` and `compose.py`.
-- **The rider method.** A fresh fix 4 m on, past the follow camera's 3 m threshold, while the turn still reads "60 m" and the remaining line "0.3 km". A settle is proven by `data-camera-center` changing, followed by a stable window. The anchor must sit at the follow point and the canvas match its container in CSS px. Paint is then checked around the anchor.
+- **The rider method.** The follow camera is tilted 35°, and it ignores fixes that move less than 3 m, so a smaller nudge leaves a stale anchor. Each measurement therefore uses a fresh fix 4 m on, while the turn still reads "60 m" and the remaining line "0.3 km". The painted disc's radius is measured, 9.4–11.25 px, not taken as a fixed 10 px. A settle is proven by `data-camera-center` changing, followed by a stable window. The anchor must sit at the follow point and the canvas match its container in CSS px. Paint is then checked around the anchor.

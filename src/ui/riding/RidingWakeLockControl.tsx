@@ -74,7 +74,7 @@ export function RidingWakeLockControl({
         <div role="alert" className="wake-lock-failure-row">
           <p>{t("wakeLock.failed")}</p>
           <button type="button" onClick={retry}>
-            {t("wakeLock.retry")}
+            {t("ride.tryAgain")}
           </button>
         </div>
       ) : null}

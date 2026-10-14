@@ -2057,16 +2057,36 @@ button:focus-visible {
   color: var(--colour-accent);
 }
 
+/* Item 145: only while Screen on is refused, the control's wrapper stops being
+ * a box, so the toggle stays beside the status text as usual and the failure
+ * row becomes a full-width row of the card, its message beside the retry
+ * where both fit. Inside the narrow control column the row used to widen it
+ * past the card and push the retry off screen. */
+.ride-wake-lock-control:has(> .wake-lock-failure-row) {
+  display: contents;
+}
+
+.ride-wake-lock-control:has(> .wake-lock-failure-row) > .wake-lock-toggle {
+  flex: 0 0 auto;
+}
+
 .wake-lock-failure-row {
   display: flex;
+  flex: 1 1 100%;
   align-items: center;
   gap: var(--space-8);
   flex-wrap: wrap;
-  margin-top: var(--space-8);
 }
 
 .wake-lock-failure-row p {
+  flex: 1 1 0;
+  min-width: 14ch;
   margin: 0;
+}
+
+.wake-lock-failure-row button {
+  flex: 0 1 auto;
+  max-width: 100%;
 }
 
 /* The single compact active-status card (backlog item 75, superseding item

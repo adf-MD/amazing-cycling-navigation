@@ -779,7 +779,6 @@ export const de: Catalogue = {
   "wakeLock.off": "Aus",
   "wakeLock.active": "Das Display bleibt an.",
   "wakeLock.failed": "Das Display konnte nicht an bleiben.",
-  "wakeLock.retry": "Tippe, um es erneut zu versuchen",
   "riding.untrustedGpx":
     "Diese importierte GPX-Datei enthält keine verlässlichen Abbiegeinformationen. Folge der Routenlinie auf der Karte.",
   "riding.noTurnCues": "Keine Abbiegehinweise",

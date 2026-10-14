@@ -710,6 +710,7 @@ _Category: Riding presentation_
        - **B is preferred:** the retry whole and operable, Screen on in place, the ordinary layout unchanged, and 63 px of map given back in German against today.
        - **Four reference cases still lose part or all of the rider:** German refused at 320×693, and refused with a failed End at 375×667 German and at 320×693. The causes are the pre-existing attribution over the rider in short maps and two failure rows together.
        - **The decisions** on the copy and on those four cases are the rider's. Nothing is implemented.
+     - **The refused Screen on slice, 14 October 2026 — candidate B approved and implemented for `0.4.71`; CI, deployment and the phone check pending** ([record](#item-145-refused-screen-on-slice)). It is a partial correction: the four cases above stay unresolved, and their rider loss is not accepted.
 
 <a id="item-145-selector-slice"></a>
 
@@ -744,3 +745,44 @@ _Category: Riding presentation_
 - **Evidence,** outside the repository: `~/acn-review/item-145-selector/`.
 - **CI and deployment, 14 October 2026:** run 38535923412 passed every job: Verify and build 316 s; shards 687, 917, 516 and 824 s; Deploy 13 s. The bounded waiter found the live site serving `0.4.70` / `5209fe7`.
 - **Installed-iPhone acceptance, reported 14 October 2026:** on an iPhone 13 on iOS 26.6.1, with `0.4.70` / `5209fe7` read from Status, every check passed: labels fit, one row, working buttons, no overflow, the switcher visible and no newly introduced scrolling. German was checked under ordinary and enlarged Display Zoom ([dated record](current-status.md#installed-iphone-acceptance-of-0470-build-5209fe7-item-145s-selector-reported-14-october-2026)). VoiceOver, physical Android and 150% Page Zoom are not covered. `677a03e` remains the broad phone-accepted build.
+
+<a id="item-145-refused-screen-on-slice"></a>
+
+### Refused Screen on slice — implemented for `0.4.71` (14 October 2026)
+
+**Approved by the rider on 14 October 2026:** candidate B of the [refused Screen on proposal](../design/route-riding-map-space/refused-screen-on.md), with the wording "Try again" / "Erneut versuchen". It is implemented for `0.4.71`, with CI, deployment and the installed-iPhone check pending ([checklist](current-status.md#session-1--stationary-on-the-installed-home-screen-pwa)). Item 145 stays open.
+
+- **The change, only while Screen on is refused:**
+  - the control's wrapper stops being a box (`display: contents`, selected with `:has()`), so the toggle stays beside the status text;
+  - the refusal's message and retry take their own full-width row of the status card, the message beside the retry where both fit;
+  - the retry reads the existing `ride.tryAgain`, and `wakeLock.retry` is removed from both catalogues. The pinned catalogue count, the unit test, the copy-migration list and the Android refusal test follow.
+
+  The rules are scoped to the control and its failure row in `src/index.css`. Ordinary Screen on, its wake-lock behaviour, the selector, the camera, the map floor, the attribution and the failed End's presentation are unchanged.
+
+- **Not resolved, and not accepted:** the rider stays partly or wholly hidden in German refused at 320×693, and refused with a failed End at 375×667 German and at 320×693 in both languages. That is the attribution over the rider and the rider outside the visible map together ([conflicts](../design/route-riding-map-space/refused-screen-on.md#what-remains-in-conflict)).
+- **The browser test,** `e2e/ridingRefusedScreenOn.smoke.spec.ts`, runs in Chromium and WebKit, in English and German, at 390×844, 375×667 and 320×693, plus free roam at 375×667 in German. It checks:
+  - the retry whole, its label visible, at least 44×44, and beside its message;
+  - an ordinary click reaching the retry with no scroll and retrying;
+  - Screen on beside the status text and operable, the ascent whole, no page overflow, and the switcher in place;
+  - the selector still in one row with its labels fitting;
+  - the card after a successful retry equal, box for box, to the ordinary successful state, with a failed End's error kept.
+- **Measured in the CI image, as local evidence (14 October 2026):**
+  - **The new test:** seven cases per project, so seven new WebKit cases. At two workers, in two runs, they summed 53.8 and 55.8 s in WebKit and 49.7 and 49.0 s in Chromium, 3.8–10.6 s each. In the four-shard split they fall into shard 2 (Chromium) and shard 4 (WebKit). Other cases shift too, so no job time is projected.
+  - **The negative control:** the pre-change refusal CSS restored, its margin included, with the short wording kept. All 14 cases failed:
+    - German at every size, at the retry-containment assertion, with 48–99% of the retry visible (48% at 320×693);
+    - English at 320×693 the same way, at 74%;
+    - English at 390 and 375 px, where Screen on dropped below the status text.
+  - **Existing coverage passed:**
+    - `ridingWakeLock.spec.ts` (6, its 200% checks included) and `ridingMapProfileViews.spec.ts` (12);
+    - `freeRoam.spec.ts`'s Screen on layout test;
+    - the selector regression in both engines;
+    - `androidRiding.spec.ts`'s refusal test, now naming "Try again".
+
+    Lint, typecheck, the build and the affected unit tests (17 files, 552 tests) passed.
+
+  - **The implemented build against the probe,** with a settled camera and the painted disc:
+    - box for box identical to candidate B's prototype in all 92 snapshots;
+    - identical to the deployed `0.4.70` in all 66 equivalent ordinary comparisons: off, on and on-end, and recovery against the successful state;
+    - in the refused states, 63 px of map back in route riding and 48 px in free roam, never worse than `0.4.70`. The four open cases improve but stay unresolved.
+- **Not established:** a refusal on the installed iPhone. None has been observed there, and no reliable way to produce one through its ordinary interface is known, so the refused state's native verification stays outstanding. Also not established: its frequency, the fit in iOS fonts, and VoiceOver.
+- **Evidence,** outside the repository: `~/acn-review/item-145-retry-impl/` and `~/acn-review/item-145-retry/`.

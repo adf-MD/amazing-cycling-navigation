@@ -870,7 +870,6 @@ export const en = {
   "wakeLock.off": "Off",
   "wakeLock.active": "Screen staying awake.",
   "wakeLock.failed": "The screen could not be kept awake.",
-  "wakeLock.retry": "Tap to try again",
   "riding.untrustedGpx":
     "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
   "riding.noTurnCues": "No turn cues",

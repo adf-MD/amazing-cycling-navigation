@@ -161,7 +161,7 @@ describe("RidingWakeLockControl", () => {
       "true",
     );
 
-    const retryButton = screen.getByRole("button", { name: /tap to try again/i });
+    const retryButton = screen.getByRole("button", { name: "Try again" });
     await user.click(retryButton);
     await act(async () => {
       fake.instances[1]?.resolveRequest();
