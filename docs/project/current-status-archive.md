@@ -1,6 +1,6 @@
 # Current status — archive: dated records from 7 October back to 10 September 2026
 
-This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026, on 7 October 2026 the four of 4 October 2026, on 9 October 2026 the three of 6 October 2026 and the two of 5 October 2026, and on 14 October 2026 item 139's record of 7 October 2026, which now opens it — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
+This file is **the continuation of [`current-status.md`](current-status.md)'s dated acceptance record**. Its records were moved here unchanged and in the same order — on 1 October 2026 those from 25 September 2026 back, on 4 October 2026 the four of 28 and 29 September 2026, on 5 October 2026 the seven of 30 September and 1 October 2026, on 6 October 2026 the six of 2 October 2026 and, later that day, the six of 3 October 2026, on 7 October 2026 the four of 4 October 2026, on 9 October 2026 the three of 6 October 2026 and the two of 5 October 2026, and on 14 October 2026 the two records of 7 October 2026, item 125's, which now opens it, and item 139's — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, the newer dated records, the per-item entries from item 114 onwards and the monitored observations, and is the only place new evidence is recorded. Nothing here is a presently actionable check.
 
 **Where the moved text's positional references now point.** These records stood in `current-status.md` after its newer dated records and before its per-item entries from item 114 onwards, and their wording is kept exactly as written. Read them like this:
 
@@ -10,7 +10,7 @@ This file is **the continuation of [`current-status.md`](current-status.md)'s da
 - **In the seven records of 30 September and 1 October 2026, moved on 5 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist above" means `current-status.md`'s open checklist; "the item 102 entry below" means `current-status.md`'s per-item entry for item 102; and "the mouse double-click observation above" means the observation from automated testing in `current-status.md`'s checklist section. Their references to one another, such as "the `0.4.47` finding below", still point within this file.
 - **In the six records of 2 October 2026, moved on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; and "the item 132 checks above" means that Session 5's checks, listed in the same record. Their references to one another, such as the `0.4.53` record's "that observation is kept below", still point within this file.
 - **In the four records of 4 October 2026, moved on 7 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist; "the next checklist", in the `0.4.61` record, means the session written for the following slice, since completed and removed. The P-01 observation's "the slice 9 acceptance below" still points within this file, to the record that follows it.
-- **In item 139's record of 7 October 2026, moved on 14 October 2026:** "Session 5" means item 139's own checklist session of that time, since completed and removed, and "the checklist" means `current-status.md`'s open checklist.
+- **In the two records of 7 October 2026, moved on 14 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed, and "the checklist" means `current-status.md`'s open checklist.
 - **In the five records of 5 and 6 October 2026, moved on 9 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed, and "the opportunistic monitoring above" means `current-status.md`'s opportunistic-monitoring list. Their references to one another still point within this file.
 - **In the six records of 3 October 2026, moved later on 6 October 2026:** "Session 5" means the named item's own checklist session of that time, since completed and removed; "the checklist" means `current-status.md`'s open checklist. Their references to one another, such as "the C-09 report above" and "D-02's acceptance below", still point within this file.
 - **"Item 115's installed-iPhone presentation checklist below"**, in the 12 September 2026 bicycle field test — the per-item checklists of that time, since consolidated into `current-status.md`'s Sessions 2 and 3.
@@ -18,6 +18,41 @@ This file is **the continuation of [`current-status.md`](current-status.md)'s da
 Links in these records are relative to `docs/project/`, as they were, and still resolve.
 
 ---
+
+### Installed-iPhone acceptance of `0.4.69` (build `677a03e`, item 125 slice 1, reported 7 October 2026)
+
+**Device and build.** The installed Home Screen PWA, in German and English. `0.4.69`, build `677a03e`, is the build the checklist was written for and the one deployed when the report was made; the report does not separately state the device's version/build reading. It names no phone model or iOS version, and none is assumed. The session specified stationary use in portrait at ordinary text, and the report does not restate those conditions. **The accepted build is `677a03e`**, and it stays so when later documentation deployments change the deployed build ID; item 139's accepted build stays `9334b25`.
+
+**The rider's report, verbatim:**
+
+> All checks pass in German and English.
+
+That is item 125's Session 5, so its checks are complete for this device and the session has been removed from the checklist. Its checks covered:
+
+- **independent screen positions:** Routes and Plan each back where they were left, Plan starting at the top on its first visit;
+- **Settings and Status:** each view back where it was left, the switcher staying in place beneath the navigation, and `Settings` / `Einstellungen` from another tab reopening the last-seen view where it was left;
+- **pre-ride restoration:** a route opened from well down Routes starting at the top, and its scrolled pre-ride screen back where it was left after a visit to Routes;
+- **paused-route restoration:** after Plan and back, the scrolled paused screen back where it was left once `Restoring your unfinished ride…` / `Deine unbeendete Fahrt wird wiederhergestellt…` had finished;
+- **the deliberate top resets:** after the ride was ended from the paused screen, `Ride` / `Fahren` showing `Choose a route` / `Route wählen` at the top;
+- **Open saved route:** Routes then back where Routes was last left, not where Planning was;
+- **Edit copy:** Planning opening at the top, with `Editing a copy` / `Kopie in Bearbeitung` showing;
+- **immediate scrolling:** scrolling at once on arrival, with nothing pulling the page back;
+- **shorter content:** Routes, shorter on return with its tag filter closed again, sitting at its new bottom with no later jump;
+- **a fresh launch:** after fully closing and reopening the app, Plan and Settings each starting at the top.
+
+This **accepts the ordinary flows of item 125's slice 1 on `0.4.69`**, at product level, in German and English. Item 125 stays in [`backlog.md`](backlog.md#item-125): persistence across fully closing the app is deferred and undecided, outside the execution order, and no further slice is approved.
+
+**Automated evidence only**, as the session listed it: held reads — a screen still loading, including leaving it before it has loaded; carried-over dialogs — a route-card prompt or the page-level switch dialog taking focus on arrival; an Edit copy completing after the rider has left Ride; the exhaustive coverage of every ordered pair of the five screens; clamping when the window grows. This report is not physical-device evidence of any of them.
+
+**Not established:**
+
+- **VoiceOver, Larger Text, landscape and physical Android** remain unverified, and so do **the on-screen keyboard and visual-viewport offsets**.
+- **The measured arrival times** — 23–189 ms, median about 45 ms, in desktop Chromium in the container — are browser measurements, not iPhone measurements.
+- **Suspension is not a fresh launch.** The positions are memory belonging to the running App instance. iOS suspending and resuming the same running app is designed to keep them; a fresh App mount — a reload, or a relaunch that loads the page afresh — starts every view at the top. The fresh-launch check covers the second case; this report does not separately establish behaviour across a suspension and resumption.
+
+**Not inferred:** any phone model, iOS version or measured geometry.
+
+**Separate, automated evidence only.** The unit, App and browser tests and their negative controls stay as recorded in [item 125's slice 1](backlog.md#item-125-slice-1), with CI run 37602138083, which deployed `677a03e`.
 
 ### Installed-iPhone acceptance of `0.4.68` (build `9334b25`, item 139, reported 7 October 2026)
 

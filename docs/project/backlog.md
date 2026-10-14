@@ -175,7 +175,7 @@ _Category: Map controls_
 
 _Category: Navigation and information architecture_
 
-**Status, 7 October 2026: slice 1 — each primary view's own position for the current app session, implemented in `0.4.69` — had its ordinary flows accepted on the installed iPhone in German and English, reported the same day, on build `677a03e`** ([dated record](current-status.md#installed-iphone-acceptance-of-0469-build-677a03e-item-125-slice-1-reported-7-october-2026); [slice 1](#item-125-slice-1)). **There is no approved next slice.** Persistence across fully closing the app is deferred and undecided, outside the active execution order; it is not a confirmed defect, and nothing about it is approved. The entry stays here, not in history, for that reason. The specification as filed follows, unchanged apart from its dated updates.
+**Status, 7 October 2026: slice 1 — each primary view's own position for the current app session, implemented in `0.4.69` — had its ordinary flows accepted on the installed iPhone in German and English, reported the same day, on build `677a03e`** ([dated record](current-status-archive.md#installed-iphone-acceptance-of-0469-build-677a03e-item-125-slice-1-reported-7-october-2026); [slice 1](#item-125-slice-1)). **There is no approved next slice.** Persistence across fully closing the app is deferred and undecided, outside the active execution order; it is not a confirmed defect, and nothing about it is approved. The entry stays here, not in history, for that reason. The specification as filed follows, unchanged apart from its dated updates.
 
 125. **Per-screen scroll restoration**
      - Origin: the rider's observation, reported 28 September 2026: switching between screens should neither discard nor share their scroll positions.
@@ -191,7 +191,7 @@ _Category: Navigation and information architecture_
      - **Update, 28 September 2026 — item 121 shipped first (`0.4.44`), with an interim rule this item is to replace.** By the rider's decision during item 121's planning, the Settings section starts at the top whenever navigation changes the rendered view: on entry from another tab, on a Settings ↔ Status switch, and when the Settings tab is tapped while Status is showing. Nothing else resets it, and no other screen's behaviour changed. That rule was approved explicitly as **interim**: this item should replace those top resets with a separately restored position for each of the two views. The mechanism is `SettingsSection.tsx`'s `useLayoutEffect` keyed on the rendered view, reusing the scroll-to-top reassertion loop extracted to `src/ui/shared/scrollToTopAndSettle.ts`; the sticky switcher and a constant `scroll-margin-top` on the view's content are recorded in [`history/items-118-131.md`](history/items-118-131.md#item-121). Any restoration must keep the switcher's position still across a switch and must not reintroduce a root `scroll-padding`, which item 121 measured to scroll the page when a sticky control takes focus and, in WebKit, to move a press on Save out from under the pointer.
      - **Update, 29 September 2026 — observed on the installed iPhone during item 121's acceptance (`0.4.44`).** Arriving at Ride or Plan keeps the scroll offset of the screen just left, Routes included, while arriving at Routes shows the top. Item 121's interim top reset applies to the Settings section alone (Settings and Status), not to any other primary screen. Source has no deliberate reset for an ordinary switch to Routes — its one-shot restoration runs only after a route has been opened — so **no cause is claimed** for Routes arriving at the top. This is the outstanding behaviour this item addresses; it adds no scope and does not change the execution order. The dated record is in [`current-status.md`](current-status.md).
      - **Update, 7 October 2026:** with item 139 accepted on the installed iPhone, this item is first in the approved order, ahead of items 103 and 120 ([order](../../CLAUDE.md)). The design questions above are unchanged by that.
-     - **Update, 7 October 2026, later:** slice 1 was accepted on the installed iPhone ([dated record](current-status.md#installed-iphone-acceptance-of-0469-build-677a03e-item-125-slice-1-reported-7-october-2026)), and this item leaves the approved execution order, which is now 146 → 103 → 120 ([order](../../CLAUDE.md)). The first design question below — persistence across closing and reopening the PWA — stays open, deferred and undecided; no slice for it is approved.
+     - **Update, 7 October 2026, later:** slice 1 was accepted on the installed iPhone ([dated record](current-status-archive.md#installed-iphone-acceptance-of-0469-build-677a03e-item-125-slice-1-reported-7-october-2026)), and this item leaves the approved execution order, which is now 146 → 103 → 120 ([order](../../CLAUDE.md)). The first design question below — persistence across closing and reopening the PWA — stays open, deferred and undecided; no slice for it is approved.
      - **Explicit design questions, deliberately open:**
        - persistence across closing and reopening the PWA (memory only, or stored);
        - resetting after substantial content changes (a filter or search change, an import, a delete, a new calculation);
@@ -335,7 +335,7 @@ _Category: Navigation and information architecture_
   - trackpad inertia continuing after a tab click cancels the restore;
   - a first read that never answers means no restore, with no time cap.
 - **The Settings/Status switcher stays put** because the section is the first thing in `<main>`. The update prompt, rendered above `<main>`, shifts every offset while it shows.
-- **Installed-iPhone acceptance:** the ordinary flows were accepted in German and English, reported 7 October 2026, on build `677a03e`, which stays the accepted build ([dated record](current-status.md#installed-iphone-acceptance-of-0469-build-677a03e-item-125-slice-1-reported-7-october-2026)). VoiceOver, Larger Text, landscape, physical Android, the keyboard and visual-viewport offsets, and behaviour across a suspension and resumption as distinct from a fresh launch are not covered.
+- **Installed-iPhone acceptance:** the ordinary flows were accepted in German and English, reported 7 October 2026, on build `677a03e`, which stays the accepted build ([dated record](current-status-archive.md#installed-iphone-acceptance-of-0469-build-677a03e-item-125-slice-1-reported-7-october-2026)). VoiceOver, Larger Text, landscape, physical Android, the keyboard and visual-viewport offsets, and behaviour across a suspension and resumption as distinct from a fresh launch are not covered.
 
 <a id="item-125-slice-1-ci"></a>
 
@@ -710,7 +710,7 @@ _Category: Riding presentation_
        - **B is preferred:** the retry whole and operable, Screen on in place, the ordinary layout unchanged, and 63 px of map given back in German against today.
        - **Four reference cases still lose part or all of the rider:** German refused at 320×693, and refused with a failed End at 375×667 German and at 320×693. The causes are the pre-existing attribution over the rider in short maps and two failure rows together.
        - **The decisions** on the copy and on those four cases are the rider's. Nothing is implemented.
-     - **The refused Screen on slice, 14 October 2026 — candidate B approved and implemented for `0.4.71`; CI, deployment and the phone check pending** ([record](#item-145-refused-screen-on-slice)). It is a partial correction: the four cases above stay unresolved, and their rider loss is not accepted.
+     - **The refused Screen on slice, 14 October 2026 — candidate B approved, shipped in `0.4.71` and its ordinary presentation checked on the installed iPhone; the refused state has no native verification** ([record](#item-145-refused-screen-on-slice)). It is a partial correction: the four cases above stay unresolved, and their rider loss is not accepted.
 
 <a id="item-145-selector-slice"></a>
 
@@ -750,7 +750,7 @@ _Category: Riding presentation_
 
 ### Refused Screen on slice — implemented for `0.4.71` (14 October 2026)
 
-**Approved by the rider on 14 October 2026:** candidate B of the [refused Screen on proposal](../design/route-riding-map-space/refused-screen-on.md), with the wording "Try again" / "Erneut versuchen". It is implemented for `0.4.71`, with CI, deployment and the installed-iPhone check pending ([checklist](current-status.md#session-1--stationary-on-the-installed-home-screen-pwa)). Item 145 stays open.
+**Approved by the rider on 14 October 2026:** candidate B of the [refused Screen on proposal](../design/route-riding-map-space/refused-screen-on.md), with the wording "Try again" / "Erneut versuchen". It shipped in `0.4.71`, deployed by run 38581636998 as build `72f1084`. **Its ordinary behaviour and presentation passed on the installed iPhone, reported 14 October 2026** ([dated record](current-status.md#installed-iphone-check-of-0471-build-72f1084-item-145s-refused-screen-on-layout-reported-14-october-2026)). The refused state itself has not been observed on the device, and no reliable way to produce one is known, so its native verification stays outstanding. Item 145 stays open.
 
 - **The change, only while Screen on is refused:**
   - the control's wrapper stops being a box (`display: contents`, selected with `:has()`), so the toggle stays beside the status text;
@@ -795,4 +795,5 @@ _Category: Riding presentation_
     - all 14 cases pass, summing 56.7 s in Chromium and 58.2 s in WebKit;
     - the failing WebKit case passes 10 of 10 repeats with retries off;
     - the German 320×693 negative control still fails at retry containment.
-  - Its evidence is in `~/acn-review/item-145-race/`. Deployment and the phone check remain pending.
+  - Its evidence is in `~/acn-review/item-145-race/`.
+- **Deployed and checked:** run 38581636998 passed every job and made `0.4.71` / `72f1084` live. The ordinary presentation then passed on the iPhone. The run also triggered item 146's heuristic 2, and [its review](history/item-146.md#runtime-review-14-october-2026) concluded to retain the configuration and monitor.

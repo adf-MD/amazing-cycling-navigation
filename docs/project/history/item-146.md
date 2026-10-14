@@ -146,3 +146,72 @@ No benchmark, full-shard run or new diagnostic was made for it. The evidence, th
 **Closure.** Item 146 is concluded. Every material finding has an explicit disposition above. Completing every possible optimisation was not its closure condition, by the rider's decision of 7 October 2026, and unresolved reliability findings stay recorded where the table says. No further audit candidate is scheduled ahead of item 103. The order is now item 103 → item 120, with [item 145](../backlog.md#item-145)'s review checkpoint before item 103's audit.
 
 **CI of the closing commit, 8 October 2026.** Run 37800024030, for `cdc0529`, which concluded this item, passed every job: Verify and build 251 s; shards 622, 647, 525 and 828 s; Deploy 526 s. The live site served `0.4.69` / `cdc0529`, and `677a03e` remains the accepted phone build. No heuristic above fired, and 985 s remains the longest shard job recorded. Deploy's duration is recorded in [`current-status.md`](../current-status.md) as an observation outside the test shards, with no cause claimed. Nothing in this record — its dispositions, limitations or heuristics — changes.
+
+<a id="runtime-review-14-october-2026"></a>
+
+### Runtime review: heuristic 2, 14 October 2026
+
+**The trigger.** The longest shard jobs of three consecutive ordinary runs were 969, 1,024 and 1,000 s, all in shard 4:
+
+| Run         | Commit    | Result                                      | Longest job |
+| ----------- | --------- | ------------------------------------------- | ----------- |
+| 38550272618 | `4e2a9b1` | passed                                      | 969 s       |
+| 38567715515 | `1a1fb00` | failed, on the imagery race; Deploy skipped | 1,024 s     |
+| 38581636998 | `72f1084` | passed; `0.4.71` live                       | 1,000 s     |
+
+That meets heuristic 2. None reached 1,080 s, and the latest left 200 s of headroom. This is a prompt for review, not a breach, a trend or an instruction to optimise.
+
+**The evidence.** The JSON timing reports, four shards for each run, were downloaded and parsed by the rider's reviewer; their figures are attributed to that inspection. The job and step durations come from the public job metadata. No timing run or local suite was made for this review.
+
+| Shard 4             | 38550272618 | 38567715515 | 38581636998 |
+| ------------------- | ----------- | ----------- | ----------- |
+| Whole job           | 969 s       | 1,024 s     | 1,000 s     |
+| "Set up Node.js"    | 6 s         | 6 s         | 27 s        |
+| Test-suite step     | 907 s       | 960 s       | 918 s       |
+| JSON test phase     | 906.391 s   | 959.101 s   | 916.250 s   |
+| Summed test time    | 1,791.208 s | 1,891.225 s | 1,807.776 s |
+| Failure upload step | skipped     | about 1 s   | skipped     |
+
+**Summed durations are not elapsed time.** They add up concurrent tests at two workers with `fullyParallel`, so they are not wall-clock time.
+
+**What changed between the two successful runs:**
+
+- **The job and the test phase:** the job grew 31 s, and the test phase only 9.859 s (the suite step 11 s). The other 21 s was the "Set up Node.js" step, at 6 s and then 27 s. Its variation has no established cause.
+- **Summed test time grew 16.568 s,** from four parts that agree within 0.3 s:
+  - **The seven new refused Screen on WebKit cases** added 55.825 s.
+  - **Four existing WebKit cases moved to shard 3**, two from `clearDraftFailure` and two from `coldStartPausedRoute`, removing their baseline 29.530 s. On shard 3 they now sum 24.918 s.
+  - **The 291 retained passed cases** went from 1,759.913 s to 1,749.911 s.
+  - **The seven Chromium cases** of the new spec landed in shard 2, summing 52.987 s.
+- **The failed run:** its first-failing case stopped early, so its work is not that of a complete run. Its failure-evidence upload took about 1 s. CI records traces for every test, passing ones included, and discards them on success, so recording is not a cost peculiar to the failure. Any extra cost of keeping the failing test's evidence falls inside the test step and is unmeasured.
+
+**Where the time goes.** Sharding is by count, in project order, so shard 4 takes the last 303 cases, all WebKit. The suite steps of the latest run, against their allocation:
+
+| Shard | Cases                               | Test-suite step |
+| ----- | ----------------------------------- | --------------- |
+| 1     | 304 Chromium                        | 630 s           |
+| 2     | 304 Chromium                        | 853 s           |
+| 3     | 232 Chromium, 46 Android, 25 WebKit | 511 s           |
+| 4     | 303 WebKit, five of them skipped    | 918 s           |
+
+- **Engine cost explains part of it.** WebKit's cases are generally slower, and they all fall in shard 4.
+- **Per-file cost matters too.** Shards 1 and 2 have the same count and engine, yet their steps differ by 223 s.
+- **The 407 s between shards 3 and 4 is an observed imbalance, not an estimate of what rebalancing would save.** Shard 2's 853 s also bounds the overall completion time.
+- **The setup:** each shard spends about 70–80 s outside the suite step: containers 25 s, Node 6–27 s, install about 6 s, build about 16 s.
+
+**The conclusion: retain the current configuration and monitor.**
+
+- **Why:**
+  - the test phase grew less than 10 s between the successful runs, and most of the job's growth was outside the tests;
+  - the new spec's WebKit cost was partly offset by redistribution;
+  - 200 s of headroom remains, above the 150 s at which heuristic 3 asks for the question to be raised;
+  - one triggering value came from a failed run doing different work.
+- **The monitoring rules are unchanged**, including completed shard jobs from failed workflows.
+- **No setup change is proposed:** the build and install are small, and the Node step's variation is unexplained.
+
+**An unvalidated option, for a future scoped proposal only.** If a slice's added WebKit cost would bring shard 4's projected headroom below about 150 s, or a heuristic fires again, one option is to rebalance the four shards: the WebKit smoke project would be split into two file-partitioned projects at different points in the project order. Its effect is not estimated here. Validating it would need:
+
+- every case still running exactly once, in its intended engine;
+- a check of the project-name dependencies in commands, test behaviour, reports and documentation;
+- a temporary allocation experiment against CI per-test durations, then a full CI run.
+
+`PWTEST_SHARD_WEIGHTS` stays not recommended, as the audit found: it is internal and undocumented. No timeout, retry, skip or coverage change is proposed.
