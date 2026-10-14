@@ -786,3 +786,13 @@ _Category: Riding presentation_
     - in the refused states, 63 px of map back in route riding and 48 px in free roam, never worse than `0.4.70`. The four open cases improve but stay unresolved.
 - **Not established:** a refusal on the installed iPhone. None has been observed there, and no reliable way to produce one through its ordinary interface is known, so the refused state's native verification stays outstanding. Also not established: its frequency, the fit in iOS fonts, and VoiceOver.
 - **Evidence,** outside the repository: `~/acn-review/item-145-retry-impl/` and `~/acn-review/item-145-retry/`.
+- **CI run 38567715515 failed, so `0.4.71` was not deployed:**
+  - **What failed:** the new test's English 390×844 WebKit case, in shard 4. The deployment was skipped.
+  - **The cause, a test race, not B's layout:** the "on" reference had captured the delayed-imagery row in the status card before the map was ready, and that row had gone by recovery, a 40 px card difference. This was the reviewer's artifact inspection, reproduced locally with held tiles.
+  - **The repair, test-only:** the test waits for `data-map-ready` and the row's removal before any reference, and checks the compared imagery state. Every assertion and the 0.5 px tolerance are unchanged.
+  - **Verified locally:**
+    - the reproduction fails with the old setup and passes with the repaired one;
+    - all 14 cases pass, summing 56.7 s in Chromium and 58.2 s in WebKit;
+    - the failing WebKit case passes 10 of 10 repeats with retries off;
+    - the German 320×693 negative control still fails at retry containment.
+  - Its evidence is in `~/acn-review/item-145-race/`. Deployment and the phone check remain pending.

@@ -21,7 +21,11 @@ import { readActiveRideStateRow } from "./support/rideStateDb.ts";
 //   single-row Profile selector unaffected;
 // - after a successful retry, the card is box for box the ordinary
 //   successful Screen on state, with the failed End's error kept when present.
-// Every snapshot is attached before its assertions or any click.
+// Every snapshot is attached before its assertions or any click, with the
+// map's imagery state; compared snapshots are taken only after the map's own
+// full load, with no imagery row in the card (CI run 38567715515: a
+// delayed-imagery row present in the reference but not in the recovery
+// changed the card's height).
 //
 // Why a browser: the layout depends on :has(), display: contents and flex
 // wrapping with real text metrics, and the retry's reachability on real hit
@@ -103,6 +107,8 @@ interface Snapshot {
   retry: (Rect & { visible: number; labelVisible: boolean; hit: boolean }) | null;
   switcher: Rect | null;
   alerts: string[];
+  /** data-map-ready, and the status card's imagery rows by test id. */
+  imagery: { mapReady: string | null; rows: string[] };
 }
 
 /** Duplicated from language.spec.ts per this repo's no-shared-e2e-helpers
@@ -392,6 +398,15 @@ async function snapshot(
       alerts: [...document.querySelectorAll("[role='alert']")].map((a) =>
         a.textContent.trim(),
       ),
+      imagery: {
+        mapReady:
+          document
+            .querySelector("[data-testid='map-container']")
+            ?.getAttribute("data-map-ready") ?? null,
+        rows: [...(card?.querySelectorAll(".ride-status-card-imagery-row") ?? [])].map(
+          (r) => r.getAttribute("data-testid") ?? r.className,
+        ),
+      },
     };
   });
   await testInfo.attach(label, {
@@ -444,6 +459,13 @@ function expectRefusedLayout(snap: Snapshot, copy: Copy, mode: "route" | "free")
 
 /** The ordinary card's boxes in two equivalent states must match. */
 function expectSameCard(a: Snapshot, b: Snapshot, what: string): void {
+  // The card also hosts the map's imagery rows (item 108), so both states
+  // must share one settled imagery state before their boxes are compared.
+  expect(a.imagery, `${what}: the reference's imagery state`).toEqual({
+    mapReady: "true",
+    rows: [],
+  });
+  expect(b.imagery, `${what}: the same imagery state`).toEqual(a.imagery);
   const boxes = (s: Snapshot) => ({
     header: s.header,
     card: s.card,
@@ -584,6 +606,22 @@ async function startRide(
   await expect
     .poll(() => readActiveRideStateRow(page), { timeout: 10_000 })
     .toMatchObject({ sessionId: expect.any(String) });
+  // Active riding suppresses the in-map loading message and shows the map's
+  // imagery messages in the status card (item 108), so map-loading hidden
+  // is not enough. Wait for the map's own full load (mirroring
+  // mapImageryRecovery.spec.ts's waitForMapFullyLoaded), then for the
+  // card's imagery row, such as the delayed-imagery notice, to go, since it
+  // clears a render after readiness.
+  await expect(page.getByTestId("map-container")).toHaveAttribute(
+    "data-map-ready",
+    "true",
+    {
+      timeout: 20_000,
+    },
+  );
+  await expect(
+    page.locator(".ride-status-card .ride-status-card-imagery-row"),
+  ).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: copy.screenOn, exact: true }),
   ).toBeVisible();
