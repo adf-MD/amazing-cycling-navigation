@@ -711,6 +711,7 @@ _Category: Riding presentation_
        - **Four reference cases still lose part or all of the rider:** German refused at 320×693, and refused with a failed End at 375×667 German and at 320×693. The causes are the pre-existing attribution over the rider in short maps and two failure rows together.
        - **The decisions** on the copy and on those four cases are the rider's. Nothing is implemented.
      - **The refused Screen on slice, 14 October 2026 — candidate B approved, shipped in `0.4.71` and its ordinary presentation checked on the installed iPhone; the refused state has no native verification** ([record](#item-145-refused-screen-on-slice)). It is a partial correction: the four cases above stay unresolved, and their rider loss is not accepted.
+     - **Rider visibility in short maps, a design proposal, 14 October 2026 — documentation only; it awaits the rider's review** ([proposal](../design/route-riding-map-space/short-map-rider-visibility.md)). Candidate A decides the follow camera's anchor within the visible map and keeps the bottom overlays at the visible bottom. In the browser it keeps the rider whole in the four cases and the ordinary failed End, in both engines and languages, and leaves every measured layout that needed no correction unchanged. The four cases stay open, and nothing is implemented or approved.
 
 <a id="item-145-selector-slice"></a>
 

@@ -127,6 +127,12 @@ None of these blocks acceptance of the item it came from. Record one if it occur
 
   **Run 38581636998**, for that test-only repair, `72f1084`, on 14 October 2026, passed every job: Verify and build 323 s; shards 692, 914, 573 and 1,000 s; Deploy 17 s. `0.4.71` / `72f1084` was confirmed live, and its ordinary presentation then passed on the installed iPhone. **Heuristic 2 fired:** the last three longest shard jobs were 969, 1,024 and 1,000 s; none reached 1,080 s. The review concluded to retain the current configuration and monitor ([review](history/item-146.md#runtime-review-14-october-2026)).
 
+  **Run 38592952926**, for the documentation commit `f07d348` on 14 October 2026:
+
+  - **The first attempt** passed Verify and build (316 s) and the four shards (677, 712, 560 and 924 s), but Deploy failed after 637 s. The rider's reviewer read the authenticated log: Pages accepted the deployment, which stayed in `updating_pages` until deploy-pages' own 600,000 ms timeout cancelled it. GitHub's reason for the stall is not established.
+  - **A deployment-only retry,** reported by the rider, succeeded: the run's second attempt shows Deploy passing in 17 s, and the live site then served `0.4.71` / `f07d348`. The retry is not an end-to-end runtime sample, and no workflow or timeout change follows.
+  - **Monitoring:** heuristic 2 is still met by the same, already reviewed runs: the last three longest shard jobs were 1,024, 1,000 and 924 s. No new review is due. `f07d348` changed documentation only, so the `0.4.71` / `72f1084` phone check stands.
+
   **Since 8 October 2026, [item 146's conclusion](history/item-146.md#conclusion-8-october-2026) sets how these durations are monitored:** the completed shard jobs of every ordinary run, failed workflows included, checked against review heuristics that are not limits.
 
 ## Dated acceptance record
