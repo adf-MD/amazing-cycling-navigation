@@ -2124,9 +2124,7 @@ describe("RidingScreen", () => {
       expect(header).not.toBeNull();
       expect(endSlot).not.toBeNull();
       expect(endSlot?.contains(endRideButton)).toBe(true);
-      const nextManoeuvrePanel = await screen.findByText(
-        "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
-      );
+      const nextManoeuvrePanel = await screen.findByText("No turn guidance available.");
       const mapContainer = screen.getByTestId("map-container");
 
       // DOCUMENT_POSITION_FOLLOWING (4).
@@ -8079,11 +8077,7 @@ describe("RidingScreen", () => {
 
       await user.click(screen.getByRole("button", { name: "Start riding" }));
 
-      expect(
-        await screen.findByText(
-          "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
-        ),
-      ).toBeInTheDocument();
+      expect(await screen.findByText("No turn guidance available.")).toBeInTheDocument();
     });
 
     it("shows the first trusted manoeuvre for a GPX import carrying a valid ACN navigation extension", async () => {
@@ -8129,11 +8123,7 @@ describe("RidingScreen", () => {
         headingDegrees: null,
       });
 
-      expect(
-        await screen.findByText(
-          "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
-        ),
-      ).toBeInTheDocument();
+      expect(await screen.findByText("No turn guidance available.")).toBeInTheDocument();
       expect(screen.queryByText("Turn left onto Ridge Road")).not.toBeInTheDocument();
     });
 

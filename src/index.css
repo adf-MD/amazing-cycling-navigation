@@ -586,7 +586,10 @@ button:focus-visible {
 .map-attribution {
   position: absolute;
   left: 8px;
-  bottom: 8px;
+  /* Item 145: the visible bottom, not the canvas's. --map-clipped-bottom is
+   * the canvas height its clipping ancestors hide (MapView sets it on its
+   * own root, the containing block); 0 wherever nothing is hidden. */
+  bottom: calc(8px + var(--map-clipped-bottom, 0px));
   z-index: 5;
   max-width: calc(100% - 80px);
   padding: 2px 6px;
@@ -2478,7 +2481,8 @@ button:focus-visible {
 .ride-map-paused-toast {
   position: absolute;
   left: 50%;
-  bottom: 8px;
+  /* Item 145: the visible bottom; see .map-attribution. */
+  bottom: calc(8px + var(--map-clipped-bottom, 0px));
   transform: translateX(-50%);
   z-index: 5;
   margin: 0;
@@ -2491,9 +2495,11 @@ button:focus-visible {
 
 /* backlog item 115: .ride-climb-cue-slot exists only so that the cue below
  * has a CSS *size container* to query. It carries no content, no role and
- * no behaviour: inset:0 makes its height exactly the map container's own
- * height, pointer-events:none keeps every map gesture reaching the canvas
- * beneath it, and the cue re-enables pointer events for itself.
+ * no behaviour: its insets make its height the map's VISIBLE height (item
+ * 145: it ends --map-clipped-bottom above the canvas's bottom, so the cue's
+ * placement queries and its bottom anchoring both see what the rider sees),
+ * pointer-events:none keeps every map gesture reaching the canvas beneath
+ * it, and the cue re-enables pointer events for itself.
  *
  * Why a wrapper rather than making .ride-map-container the container:
  * container-type: size implies contain: layout, which turns an element into
@@ -2528,7 +2534,7 @@ button:focus-visible {
  * than an assumed ordering. */
 .ride-climb-cue-slot {
   position: absolute;
-  inset: 0;
+  inset: 0 0 var(--map-clipped-bottom, 0px) 0;
   z-index: 5;
   container-type: size;
   container-name: ride-map-overlay;
@@ -2602,12 +2608,13 @@ button:focus-visible {
  * .map-attribution, shifting further up to clear .ride-map-paused-toast
  * whenever a manual gesture has paused Follow during a climb (the toast
  * keeps its own ordinary bottom-centre position everywhere — only the cue
- * moves). max-width relaxes from the control-safe span to the map's own
- * 8px insets, because the bottom of the map has no 48px control column to
- * clear; the box still shrink-to-fits, so the item 108 compaction result
- * is unaffected at ordinary phone portrait. See e2e/ridingClimbView.spec.ts
- * for the measured geometry, the threshold-straddling proof and the
- * paused-toast coexistence proof. */
+ * moves). max-width changes from the control-safe span to stop at the
+ * rider's column (item 145): the box still shrink-to-fits, so the item 108
+ * compaction result is unaffected at ordinary phone portrait, and only a
+ * cue that would reach the rider wraps instead. See
+ * e2e/ridingClimbView.spec.ts for the measured geometry, the
+ * threshold-straddling proof and the paused-toast coexistence proof, and
+ * e2e/ridingVisibleMapFraming.smoke.spec.ts for item 145's. */
 .ride-climb-cue {
   position: absolute;
   top: 8px;
@@ -2630,30 +2637,44 @@ button:focus-visible {
 /* backlog item 115: the lower-right enhancement. The threshold is the
  * height the map must have before the cue, the paused-Follow toast, the
  * attribution and their design-token gaps all genuinely fit one above the
- * other. Derived from the worst case rather than from one measurement:
+ * other. Item 145 raised it from 14rem, which left the right-hand control
+ * column out: below about 259px of map the cue overlapped Follow, and a tap
+ * there reached the cue's body, so neither Follow nor View acted. Derived
+ * from the worst case rather than from one measurement:
  *
- *   8px top breathing room
+ *   the right-hand control column (8px inset + North-up 48px + 8px gap +
+ *   Follow 48px = 112px, in px at every text size)
+ * + an 8px gap
  * + the cue's own worst-case height (its 8px vertical padding, a title
  *   line at 1rem, a --space-4 gap, a remaining-distance line at 0.85rem
- *   allowed to wrap to two lines, a --space-4 gap, and the action at
- *   max(44px touch target, 2 * --space-8 padding + a 1rem line))
+ *   wrapping to two lines, which the width limit below makes the ordinary
+ *   case for a long English line at 320px, a --space-4 gap, and the action
+ *   at max(44px touch target, 2 * --space-8 padding + a 1rem line)):
+ *   measured 113px at 100% root text
  * + max(paused-toast reserve, attribution reserve) from the slot above
  *
- * which comes to roughly 174px at 100% root text and roughly 266px at
- * 200%. Expressed as a single rem multiple the binding case is 100% text
- * (174 / 16 = 10.9rem), so 14rem carries about 29% headroom there and far
- * more at enlarged text, where the map is nowhere near that tall anyway.
- * rem, not px, so the threshold scales with the content it is protecting.
- * e2e/ridingClimbView.spec.ts proves the flip comfortably either side of
- * this value by deriving the viewport height from a live measurement of
- * the map, rather than by restating the constant. */
-@container ride-map-overlay (min-height: 14rem) {
+ * which comes to about 287px at 100% root text: 18rem (288px). At enlarged
+ * text the controls do not grow, so 18rem carries more headroom there, and
+ * the map is nowhere near that tall anyway. Below it the cue keeps the top
+ * placement, over the far part of the route ahead (accepted by the rider on
+ * 15 October 2026). e2e/ridingClimbView.spec.ts proves the flip
+ * comfortably either side of this value, and
+ * e2e/ridingVisibleMapFraming.smoke.spec.ts one pixel either side, both by
+ * deriving the viewport height from a live measurement of the map rather
+ * than by restating the constant. */
+@container ride-map-overlay (min-height: 18rem) {
   .ride-climb-cue {
     top: auto;
     left: auto;
     right: 8px;
     bottom: var(--ride-map-attribution-reserve);
-    max-width: calc(100% - 16px);
+    /* Item 145: never into the rider's column. The follow camera keeps the
+     * rider at the map's horizontal centre, and its 13px disc plus the 4px
+     * corrective clearance (src/map/followFraming.ts) must stay clear: so
+     * the cue, 8px from the right, may extend at most to 17px right of the
+     * centre. A wider line wraps instead (English at 320px: one more line);
+     * no text, label or target shrinks. */
+    max-width: calc(50% - 8px - 17px);
   }
 
   /* The toast is a sibling of the slot, not of the cue, so it is reached
@@ -2693,7 +2714,7 @@ button:focus-visible {
  * is around 7rem. At 200% text that is 224px, comfortably above the
  * container's 174px map, so this fires; at short landscape (map 160px at
  * 100% text) it is 112px, so it does not, and that already-contained case
- * keeps its 8px inset. It is strictly below the lower-right branch's 14rem,
+ * keeps its 8px inset. It is strictly below the lower-right branch's 18rem,
  * so the two queries are mutually exclusive by construction and the
  * lower-right placement can never engage at 200%. Written AFTER that block
  * so a threshold edit that made them overlap would be caught by the ordinary

@@ -32,7 +32,8 @@ This file records verification evidence only; the behaviour contracts themselves
 - [ ] After a real cold relaunch, the launcher's one-tap `Resume ride` — reached since item 132 through the paused route screen's `Back to Ride options` — reaches the active immersive map with a single permission prompt and one GPS watch (item 72). The paused screen's own `Resume ride` after a cold relaunch was accepted with item 132, reported 2 October 2026; that acceptance does not cover this launcher path, its permission prompt or its GPS-watch count.
 - [ ] Switching to a different route from a card well down the Routes list expands the prompt inside that card without the page jumping, and `End and switch`, `Return to paused ride` and `Cancel` each behave; route→free roam, free roam→route and same-session recovery behave correspondingly (items 73, 95). Planning's entry path changed in `0.4.52`: Save no longer opens anything, and Open saved route's guarded confirmation was accepted on the installed iPhone, reported 2 October 2026.
 - [ ] Route Library sorting: pinned routes keep their position under every order, a chosen sort survives a genuine reload, and a route with no recorded ascent reads as "ascent not available" and sorts last (item 99).
-- [ ] An imported untrusted GPX compacts its no-turn-cues warning after about ten seconds, keeps the compact control through a Map/Profile switch, and VoiceOver announces the warning once and describes the control's expanded/collapsed state (item 97).
+- [ ] An imported GPX without trusted turns shows "No turn guidance available." / "Keine Abbiegehinweise verfügbar." on one line from the start, unchanged past ten seconds and through a Map/Profile switch, with nothing to tap, and VoiceOver announces it once (items 97 and 145, `0.4.72`).
+- [ ] With `0.4.72`, ordinary route riding and free roam at standard and enlarged Display Zoom: the rider at its usual place, the attribution whole and its link tappable, the map controls, ascent, Screen on and switcher unchanged, no scrolling, and pan, North-up and zoom as before (item 145's [short-map slice](backlog.md#item-145-short-map-slice)). The refused Screen on and failed End states it corrects cannot be produced on the phone, so its four cases stay open.
 - [ ] Settings reads correctly with no route open: the `Riding` wake-lock explanation and the `Local gradient colours` disclosure (items 79, 82).
 
 ### Session 2 — one representative ride on a route with a recognised climb and descent
@@ -47,7 +48,8 @@ This file records verification evidence only; the behaviour contracts themselves
   - the cue in the map's lower right shows `Ansehen` / `View`, and leaves the marker and the nearby route visible, including in a **shorter map** (a status card carrying an imagery message, plus the manoeuvre panel);
   - `Ansehen` / `View` still opens the climb;
   - a manual gesture's `Folgemodus pausiert.` / `Map follow paused.` toast appears below the cue without either being obscured;
-  - the cue stays clear of the controls and the attribution.
+  - the cue stays clear of the controls and the attribution;
+  - since `0.4.72` (item 145), in English at enlarged Display Zoom the cue wraps rather than reaching the marker, and in a short map sits at the top with Follow and View both working.
 
 ### Session 3 — a deliberately controlled recovery and offline session
 
@@ -140,6 +142,8 @@ None of these blocks acceptance of the item it came from. Record one if it occur
   - **The cause, test timing:** the rider's reviewer inspected the retained artifact (`playwright-failures-38607781112-1-shard-3`). By the trace's command times, the nominal 100 ms gap took 416 ms and the second `touchStart` 233 ms to return, so the two `touchEnd` commands were 718.6 ms apart. The double tap sent no timestamps, so each touch event's `timeStamp` followed its command's arrival, and MapLibre 6.6.0 zooms only when the tap ends are under 500 ms apart. That CI's events were further apart is inferred from those command times; a controlled local reproduction confirmed the DOM mechanism ([record](history/item-146.md#double-tap-timestamps-15-october-2026)).
   - **The repair, test-only:** all four events take explicit CDP timestamps from one origin and one schedule, and the test attaches the recorded touch timing and checks it against MapLibre's limits before the zoom poll.
   - **Monitoring:** no review heuristic fired. The last three longest shard jobs were 1,000, 924 and 978 s: none reached 1,080 s, and only one reached 1,000 s.
+
+  **Run 38712502462**, for that repair, `5354bc6`, on 15 October 2026, passed every job: Verify and build 310 s; shards 541, 959, 582 and 988 s; Deploy 8 s. `0.4.71` / `5354bc6` was deployed. No heuristic fired: the last three longest shard jobs were 924, 978 and 988 s.
 
   **Since 8 October 2026, [item 146's conclusion](history/item-146.md#conclusion-8-october-2026) sets how these durations are monitored:** the completed shard jobs of every ordinary run, failed workflows included, checked against review heuristics that are not limits.
 

@@ -57,8 +57,8 @@ const URGENCY_FONT_WEIGHT: Record<ReturnType<typeof classifyManoeuvreUrgency>, n
  * covers that wait, so this panel need not duplicate it), or the route is an
  * untrusted `gpx-import` (backlog item 97: that case is delegated entirely
  * to RidingUntrustedGpxNotice, rendered by RidingScreen outside this
- * Map-exclusive panel so its compact "No turn cues" indicator survives
- * Map<->Profile switching — rendering it here too would duplicate it).
+ * Map-exclusive panel so its status survives Map<->Profile switching —
+ * rendering it here too would duplicate it).
  *
  * Accessibility: only the instruction+qualifier text carries
  * `role="status"`. Its rendered content changes only at a meaningful

@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -268,6 +269,8 @@ const DEFAULT_CAMERA_STATE: StoredCameraState = {
 // configurable product setting (backlog item 53).
 const RIDING_ZOOM_STEP = 1;
 
+const NO_FOLLOW_FRAMING_OBSTACLES: readonly HTMLElement[] = [];
+
 function formatGeolocationError(translator: Translator, error: GeolocationError): string {
   switch (error.reason) {
     case "permission-denied":
@@ -415,6 +418,15 @@ export function RidingScreen({
   const [imageryStatus, setImageryStatus] = useState<MapImageryRecoveryStatus | null>(
     null,
   );
+  // Item 145: the map's clipped height, which keeps the paused toast and
+  // the climb cue's slot at the visible bottom, and the cue's own element,
+  // which the follow framing keeps clear of the rider.
+  const [mapClippedBottomPx, setMapClippedBottomPx] = useState(0);
+  const [climbCueElement, setClimbCueElement] = useState<HTMLDivElement | null>(null);
+  const followFramingObstacles = useMemo(
+    () => (climbCueElement ? [climbCueElement] : NO_FOLLOW_FRAMING_OBSTACLES),
+    [climbCueElement],
+  );
   const [imageryRetryCommand, setImageryRetryCommand] =
     useState<ImageryRetryCommand | null>(null);
   const [wasStatusCardShown, setWasStatusCardShown] = useState(showStatusCard);
@@ -513,10 +525,9 @@ export function RidingScreen({
   const isTrustedForNavigation = hasTrustedManoeuvres(route);
   // Backlog item 97: gates RidingUntrustedGpxNotice, rendered once below
   // outside the Map-only .ride-content-area toggle (unlike
-  // RidingNextManoeuvrePanel) so its compact "No turn cues" indicator
-  // survives Map<->Profile switching. geolocationStatus !== "idle" is this
-  // notice's own episode boundary — see its doc comment for why no separate
-  // counter is needed.
+  // RidingNextManoeuvrePanel), so Map<->Profile switching never remounts
+  // it. Since item 145 it is one concise status for the whole episode;
+  // geolocationStatus !== "idle" is that episode's boundary.
   const showUntrustedGpxNotice =
     nav.geolocationStatus !== "idle" &&
     !isTrustedForNavigation &&
@@ -2302,6 +2313,15 @@ export function RidingScreen({
     ),
   );
 
+  // The immersive map pane: shown only in the Map view (kept laid out under
+  // Profile), with item 145's clipped height for the overlays it holds.
+  // React's CSSProperties has no index signature for custom properties.
+  const immersiveMapContainerStyle: CSSProperties & Record<`--${string}`, string> = {
+    visibility: activeView === "map" ? "visible" : "hidden",
+    pointerEvents: activeView === "map" ? undefined : "none",
+    "--map-clipped-bottom": `${String(mapClippedBottomPx)}px`,
+  };
+
   return (
     <section
       className={`screen${nav.geolocationStatus !== "idle" ? " riding-fixed-shell" : ""}`}
@@ -2582,12 +2602,7 @@ export function RidingScreen({
               : " ride-map-container--overview"
           }`}
           style={
-            nav.geolocationStatus !== "idle"
-              ? {
-                  visibility: activeView === "map" ? "visible" : "hidden",
-                  pointerEvents: activeView === "map" ? undefined : "none",
-                }
-              : undefined
+            nav.geolocationStatus !== "idle" ? immersiveMapContainerStyle : undefined
           }
           aria-hidden={
             nav.geolocationStatus !== "idle" ? activeView !== "map" : undefined
@@ -2620,6 +2635,9 @@ export function RidingScreen({
             }}
             onImageryStatusChange={showStatusCard ? setImageryStatus : undefined}
             imageryRetryCommand={showStatusCard ? imageryRetryCommand : undefined}
+            followFramingActive={camera.mode === "following"}
+            followFramingObstacles={followFramingObstacles}
+            onVisibleRegionChange={setMapClippedBottomPx}
           />
           {nav.geolocationStatus === "watching" ? (
             <div className="ride-map-zoom-controls">
@@ -2711,7 +2729,9 @@ export function RidingScreen({
            * out of the route-ahead corridor, and nearer the Profile
            * control below the map — is applied only when the map is tall
            * enough for the cue, .map-attribution and the bottom-centre
-           * .ride-map-paused-toast below to coexist without collision.
+           * .ride-map-paused-toast below to coexist without collision, and
+           * since item 145 below the right-hand controls, never reaching
+           * into the rider's column.
            * The toast must stay DOM-earlier than this cue for the rule
            * that separates the two to match. */}
           {nav.geolocationStatus !== "idle" &&
@@ -2724,6 +2744,7 @@ export function RidingScreen({
               onViewClimb={() => {
                 setActiveView("profile");
               }}
+              cueRef={setClimbCueElement}
             />
           ) : null}
         </div>

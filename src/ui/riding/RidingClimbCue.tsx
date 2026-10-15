@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ClimbProgressMetrics } from "../../navigation/climbElevationView.ts";
 import { formatDistanceKm } from "../shared/routeSummary.ts";
@@ -5,6 +6,9 @@ import { formatDistanceKm } from "../shared/routeSummary.ts";
 export interface RidingClimbCueProps {
   metrics: ClimbProgressMetrics;
   onViewClimb: () => void;
+  /** Item 145: the cue's own box, which the follow framing keeps clear of
+   * the rider (MapView's followFramingObstacles). */
+  cueRef?: Ref<HTMLDivElement>;
 }
 
 /**
@@ -49,12 +53,12 @@ export interface RidingClimbCueProps {
  * the cue's widest line, and the cue — which shrinks to its content —
  * reached across the rider's position marker in a short map.
  */
-export function RidingClimbCue({ metrics, onViewClimb }: RidingClimbCueProps) {
+export function RidingClimbCue({ metrics, onViewClimb, cueRef }: RidingClimbCueProps) {
   const translator = useTranslate();
   const { t } = translator;
   return (
     <div className="ride-climb-cue-slot">
-      <div className="ride-climb-cue">
+      <div ref={cueRef} className="ride-climb-cue">
         <div className="ride-climb-cue-text">
           <p role="status" className="ride-climb-cue-title">
             {t("climb.cueActive")}

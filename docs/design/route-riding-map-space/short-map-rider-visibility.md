@@ -1,6 +1,20 @@
 # Item 145 — rider visibility in short maps: a design proposal
 
-**Status (14 October 2026): documentation only, awaiting the rider's review.** It is part of [item 145](../../project/backlog.md#item-145). Nothing is implemented or approved, and the queue stays 145 → 142 → 103 → 120. The four cases the [refused Screen on correction](refused-screen-on.md#what-remains-in-conflict) left open stay open: a browser result in a proposal does not close them. The text modes, the root font, Settings and the support policy are not touched.
+**Status (15 October 2026): approved with the refinements below and implemented in `0.4.72`** ([slice](../../project/backlog.md#item-145-short-map-slice)). It is part of [item 145](../../project/backlog.md#item-145), which stays open, as do the four cases until the installed-iPhone check; browser results do not close them. The queue stays 145 → 142 → 103 → 120.
+
+## Approved final design (15 October 2026)
+
+The rider approved it after two further rounds measured outside the repository, in `~/acn-review/item-145-shortmap/` (`allowance-13px.md`, then `notice-reassessment.md`, with five comparison images). It supersedes this proposal's 12 px allowance, its 1.4 px climb case and its alternatives; everything from [What this rests on](#what-this-rests-on) onwards is the 14 October proposal, kept as the measured record.
+
+- **The disc and the clearance:** 13 px, with the 4 px clearance added only when the anchor moves. An ordinary anchor that already holds the whole disc clear of the overlays is kept with less: 0.94 px at 320×693 in English, refused or with a failed End.
+- **The concise notice.** An imported route without trusted turn guidance shows one status, "No turn guidance available." / "Keine Abbiegehinweise verfügbar.", from the start of the ride; item 97's ten-second paragraph, compact control and explanation are gone. Its one 37 px line gives the climb's map 38 px back (163 → 201 px refused with a failed End at 320×693), which resolves the 13 px check's only conflict there, a 0.56 px deficit. Neither the cue's flush-top rule at 11rem nor a smaller attribution inset, the two measured alternatives, is adopted. The notice never shows on the trusted reference route, so the four cases still rest on candidate A.
+- **The lower-right climb cue stops short of the rider's column** (`max-width: calc(50% - 8px - 17px)`). In English at 320 px the cue, 128.6 px wide, reached 5.56 px into the disc from the side, and A moved the rider 71.5–98.65 px up to clear it. Capped, the cue wraps one more line and the rider keeps its ordinary framing.
+- **Its lower-right placement needs 18rem, not 14rem.** Below about 259 px of map the cue overlapped Follow, and a tap there reached the cue's body, so neither Follow nor View acted; the cap alone made the overlap 48×24 px. Below 18rem the cue keeps its top placement, over the far part of the route ahead.
+- **A drift with no new fix is corrected.** A resize keeps MapLibre's centre, and with the follow camera's tilt the rider then sits a few pixels off its anchor until the next fix: in the climb's tight case 2.06 px under the attribution. While the follow command is in force, A now eases a rider that is actually clipped or covered even when its decision has not changed, once per settled layout; a whole and clear rider slightly off its point is left alone.
+- **A pointer held on the map defers a renewal.** Found during implementation, in the browser: an ease stops MapLibre's gesture handlers, so a renewal falling between a pointer-down and MapLibre recognising the drag cancelled the pan (2 of 20 repeats under load, in both engines). A held pointer now counts as movement.
+- **The conflict fallback remains for genuine conflicts.** Where no position leaves the disc and both clearances, A keeps the current framing rather than moving the rider into an obstruction; End's confirmation, with no visible map, is one. No reference state reaches one now.
+
+<a id="what-this-rests-on"></a>
 
 **What this rests on.**
 

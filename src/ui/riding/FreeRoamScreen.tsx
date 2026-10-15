@@ -1,6 +1,13 @@
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { Translator } from "../../i18n/translate.ts";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   MapView,
   type ImageryRetryCommand,
@@ -197,6 +204,9 @@ export function FreeRoamScreen({
   const [imageryStatus, setImageryStatus] = useState<MapImageryRecoveryStatus | null>(
     null,
   );
+  // Item 145: the map's clipped height, which keeps the paused toast at the
+  // visible bottom (see RidingScreen.tsx's identical wiring).
+  const [mapClippedBottomPx, setMapClippedBottomPx] = useState(0);
   const [imageryRetryCommand, setImageryRetryCommand] =
     useState<ImageryRetryCommand | null>(null);
   const [wasStatusCardShown, setWasStatusCardShown] = useState(showStatusCard);
@@ -438,6 +448,11 @@ export function FreeRoamScreen({
     );
   }
 
+  // React's CSSProperties has no index signature for custom properties.
+  const mapContainerStyle: CSSProperties & Record<`--${string}`, string> = {
+    "--map-clipped-bottom": `${String(mapClippedBottomPx)}px`,
+  };
+
   return (
     <section className="screen riding-fixed-shell" aria-label={t("freeRoam.title")}>
       {/* The immersive Pause/title/End header (backlog item 55) — renders
@@ -517,7 +532,10 @@ export function FreeRoamScreen({
        * roam has no Profile pane to stack alongside it, so there's no
        * toggle/visibility logic here, just the one always-visible pane. */}
       <div className="ride-content-area ride-content-area--immersive">
-        <div className="ride-map-container ride-map-container--immersive">
+        <div
+          className="ride-map-container ride-map-container--immersive"
+          style={mapContainerStyle}
+        >
           {/* Backlog item 108: imageryCopyContext="free-roam" makes MapView's
            * own in-map imagery banners say "your position" rather than "the
            * route". That unhosted path is genuinely reachable, not defensive:
@@ -545,6 +563,8 @@ export function FreeRoamScreen({
             onImageryStatusChange={showStatusCard ? setImageryStatus : undefined}
             imageryRetryCommand={showStatusCard ? imageryRetryCommand : undefined}
             imageryCopyContext="free-roam"
+            followFramingActive={camera.mode === "following"}
+            onVisibleRegionChange={setMapClippedBottomPx}
           />
           {nav.geolocationStatus === "watching" ? (
             <div className="ride-map-zoom-controls">

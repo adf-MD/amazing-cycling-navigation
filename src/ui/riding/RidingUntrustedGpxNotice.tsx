@@ -1,88 +1,31 @@
 import { useTranslate } from "../../i18n/useTranslate.ts";
-import { useEffect, useId, useState } from "react";
-
-// Backlog item 97. 10 seconds, not a shorter/tunable value — never shorten
-// this for test convenience; e2e coverage waits it out for real.
-const UNTRUSTED_GPX_FULL_WARNING_MS = 10_000;
 
 /**
- * The untrusted-GPX-import trust notice, shown throughout an active ride on
- * a route with no trusted manoeuvre metadata and source.kind === "gpx-import"
- * (see domain/manoeuvreTrust.ts's hasTrustedManoeuvres — the caller decides
- * trust and gpx-import-ness; this component is presentational only). Unlike
- * RidingNextManoeuvrePanel, which is Map-exclusive and remounts on every
- * Map<->Profile toggle, this notice is rendered by RidingScreen once, outside
- * the Map-only .ride-content-area toggle, specifically so it can own a
- * multi-second timed disclosure without confusing a view change for a new
- * ride-session episode. It does not duplicate itself per view the way
- * RidingCompactManoeuvreCue does — that pattern exists for stateless content
- * needing different text per view; this needs one continuous stateful
- * instance shared across both.
+ * The untrusted-GPX-import trust notice (backlog item 97), shown throughout
+ * an active ride on a route with no trusted manoeuvre metadata and
+ * source.kind === "gpx-import" (see domain/manoeuvreTrust.ts's
+ * hasTrustedManoeuvres — the caller decides trust and gpx-import-ness; this
+ * component is presentational only).
  *
- * No props, no externally-supplied "episode" identity: RidingScreen renders
- * this only while nav.geolocationStatus !== "idle" for an untrusted
- * gpx-import route, and that status only ever leaves "idle" on a genuine
- * fresh Start, explicit Resume, or cold resume-intent recovery — never
- * transiently on the mid-ride "error" -> "watching" Try-again retry, which
- * stays within the same mounted episode throughout. React's own mount
- * lifecycle for this component therefore already is the required episode
- * boundary; do not "fix" this by threading a counter down from RidingScreen
- * mirroring MapView's item-96 SLOW_IMAGERY_NOTICE_GRACE_MS episode ref — that
- * ref exists there because that effect can re-run while still mounted
- * (its own eligibility/retryToken dependencies can change without an
- * unmount); this component's mount-once effect below has no such dependency
- * and therefore no overlapping-timer race to guard against.
+ * Item 145 (approved by the rider on 15 October 2026) replaced item 97's
+ * ten-second full paragraph, compact "No turn cues" button and expandable
+ * explanation with this one concise, non-interactive status: "No turn
+ * guidance available." / "Keine Abbiegehinweise verfügbar.". It is shown
+ * from the start of the ride episode and keeps the same element and text
+ * for as long as it is relevant: there is no timer, no state and nothing to
+ * expand.
+ *
+ * RidingScreen renders it once per ride episode (while
+ * nav.geolocationStatus !== "idle"), outside the Map-only
+ * .ride-content-area toggle, so a Map<->Profile switch or a GPS update
+ * never remounts it or changes its text. Whether a screen reader announces
+ * the status once, as intended, is unverified on the device (VoiceOver).
  */
 export function RidingUntrustedGpxNotice() {
   const { t } = useTranslate();
-  const fullWarningText = t("riding.untrustedGpx");
-  const [autoCollapsed, setAutoCollapsed] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const explanationId = useId();
-
-  // Empty deps: this can never re-run while the component stays mounted, so
-  // there is at most one live pending timeout per mounted instance — the
-  // cleanup below cancels it before unmount (or before React Strict Mode's
-  // development-only second setup), which is sufficient on its own. Do not
-  // read this as "runs exactly once per mount": Strict Mode may genuinely
-  // execute setup -> cleanup -> setup for a single logical mount, and the
-  // correctness property that must hold regardless is only ever-one-live-
-  // timer, not exactly-once-ever.
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setAutoCollapsed(true);
-    }, UNTRUSTED_GPX_FULL_WARNING_MS);
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, []);
-
-  if (!autoCollapsed) {
-    return (
-      <p role="status" className="status-row">
-        {fullWarningText}
-      </p>
-    );
-  }
-
   return (
-    <div className="stack">
-      <button
-        type="button"
-        className="btn-secondary"
-        aria-expanded={isExpanded}
-        aria-controls={isExpanded ? explanationId : undefined}
-        onClick={() => {
-          setIsExpanded((expanded) => !expanded);
-        }}
-      >
-        {t("riding.noTurnCues")}
-      </button>
-      {isExpanded ? (
-        <p id={explanationId} className="status-row">
-          {fullWarningText}
-        </p>
-      ) : null}
-    </div>
+    <p role="status" className="status-row">
+      {t("riding.untrustedGpx")}
+    </p>
   );
 }

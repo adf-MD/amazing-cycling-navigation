@@ -39,8 +39,11 @@ setWorkerUrl(maplibreWorkerUrl);
  * rider sits below the map's true vertical centre and more of the
  * surrounding route stays visible. A map-rendering concern, not a
  * navigation decision, so it lives here rather than in the camera
- * state machine (src/ui/riding/rideCamera.ts). */
-const FOLLOW_VERTICAL_OFFSET_PX = 60;
+ * state machine (src/ui/riding/rideCamera.ts). Item 145: the ordinary
+ * offset; MapView's follow framing (followFramingController.ts) may pass a
+ * different one through `followOffsetPx` when part of the map is hidden or
+ * covered. */
+export const FOLLOW_VERTICAL_OFFSET_PX = 60;
 
 /** Duration of a "following" camera ease — brief enough to feel
  * responsive to a fresh fix, long enough to avoid a visible jump. */
@@ -305,13 +308,16 @@ export interface MapLibreLike {
    * north-up reset — see `followOffset`). `followOffset: true` biases the
    * rider below vertical centre so more of the map is visible ahead —
    * only appropriate for a live follow ease, never for a restore jump
-   * (which may carry its own manually-set pitch) or the north-up reset. */
+   * (which may carry its own manually-set pitch) or the north-up reset.
+   * `followOffsetPx` replaces FOLLOW_VERTICAL_OFFSET_PX for that bias
+   * (item 145's framing in the visible map); omitted, the ordinary offset
+   * applies. */
   setCamera(
     coordinate: Coordinate | null,
     zoom: number | null,
     bearingDegrees: number,
     pitchDegrees: number,
-    options: { animate: boolean; followOffset: boolean },
+    options: { animate: boolean; followOffset: boolean; followOffsetPx?: number },
   ): void;
   /** Moves only the camera's centre, leaving zoom, bearing and pitch
    * genuinely untouched by never including them in the underlying
@@ -343,15 +349,20 @@ export interface MapLibreLike {
    * hasActionableFollowAnchor for the exact condition. */
   changeZoomBy(delta: number): void;
   /** Projects a geographic coordinate to its current on-screen pixel
-   * position. Optional and diagnostic-only — added narrowly for real-
-   * browser proof that a genuinely followed zoom press (backlog item 65)
-   * keeps the rider's coordinate at the same screen pixel, never read by
-   * any production decision logic. Deliberately optional (not required,
-   * unlike every other method here) so the ~15 existing test doubles
-   * implementing this interface elsewhere in the codebase need no
-   * mechanical stub addition — only the handful that actually exercise
-   * this diagnostic implement it. */
+   * position. Added for real-browser proof that a genuinely followed zoom
+   * press (backlog item 65) keeps the rider's coordinate at the same screen
+   * pixel; since item 145 the follow framing also reads it, to tell whether
+   * the rider is actually clipped or covered. Deliberately optional (not
+   * required, unlike every other method here) so the ~15 existing test
+   * doubles implementing this interface elsewhere in the codebase need no
+   * mechanical stub addition; without it the framing never corrects a
+   * drift. */
   project?(coordinate: Coordinate): { x: number; y: number };
+  /** Whether the camera is moving (an ease, a fit or a gesture). Optional
+   * for the same reason as `project`; without it the follow framing treats
+   * the camera as settled. Item 145: a renewal waits for the camera to
+   * settle rather than restarting an ease in progress. */
+  isMoving?(): boolean;
   /** Recomputes the map's size from its container. Needed after the container's
    * on-screen size changes post-creation (e.g. iOS Safari/PWA chrome settling
    * after first paint) — otherwise fitBounds/camera maths use stale dimensions. */
@@ -702,7 +713,7 @@ export class MapLibreAdapter implements MapLibreLike {
     zoom: number | null,
     bearingDegrees: number,
     pitchDegrees: number,
-    options: { animate: boolean; followOffset: boolean },
+    options: { animate: boolean; followOffset: boolean; followOffsetPx?: number },
   ): void {
     const center: [number, number] | undefined = coordinate
       ? [coordinate[0], coordinate[1]]
@@ -713,7 +724,9 @@ export class MapLibreAdapter implements MapLibreLike {
         ...(zoom !== null ? { zoom } : {}),
         bearing: bearingDegrees,
         pitch: pitchDegrees,
-        offset: options.followOffset ? [0, FOLLOW_VERTICAL_OFFSET_PX] : [0, 0],
+        offset: options.followOffset
+          ? [0, options.followOffsetPx ?? FOLLOW_VERTICAL_OFFSET_PX]
+          : [0, 0],
         duration: FOLLOW_EASE_DURATION_MS,
         essential: true,
       });
@@ -749,6 +762,10 @@ export class MapLibreAdapter implements MapLibreLike {
   project(coordinate: Coordinate): { x: number; y: number } {
     const point = this.map.project([coordinate[0], coordinate[1]]);
     return { x: point.x, y: point.y };
+  }
+
+  isMoving(): boolean {
+    return this.map.isMoving();
   }
 
   resize(): void {

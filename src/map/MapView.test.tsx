@@ -6905,3 +6905,211 @@ describe("MapView", () => {
     });
   });
 });
+
+// Item 145: MapView's wiring of the follow framing (followFramingController.ts
+// has the timing contract's own tests). jsdom has no layout, so each test
+// gives the canvas host and one clipping wrapper real rectangles, and drives
+// the ResizeObserver callbacks and animation frames itself.
+describe("MapView follow framing (item 145)", () => {
+  let frames: Map<number, FrameRequestCallback>;
+  let observerCallbacks: (() => void)[];
+  let now: number;
+
+  beforeEach(() => {
+    frames = new Map();
+    observerCallbacks = [];
+    now = 0;
+    let nextFrame = 1;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const handle = nextFrame;
+      nextFrame += 1;
+      frames.set(handle, callback);
+      return handle;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
+      frames.delete(handle);
+    });
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          observerCallbacks.push(callback);
+        }
+        observe(): void {
+          /* the test drives every callback itself */
+        }
+        unobserve(): void {
+          /* no-op */
+        }
+        disconnect(): void {
+          /* no-op */
+        }
+      },
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** Runs animation frames for `ms`, 16 ms apart. */
+  function runFrames(ms: number): void {
+    for (let elapsed = 0; elapsed < ms; elapsed += 16) {
+      now += 16;
+      const pending = [...frames.values()];
+      frames.clear();
+      act(() => {
+        for (const callback of pending) callback(now);
+      });
+    }
+  }
+
+  /** A 288 × 160 canvas host whose clipping wrapper shows `visible()` px. */
+  function stubLayout(wrapper: HTMLElement, visible: () => number): HTMLElement {
+    const host = screen.getByTestId("map-container");
+    vi.spyOn(host, "getBoundingClientRect").mockImplementation(
+      () => new DOMRect(0, 0, 288, 160),
+    );
+    vi.spyOn(wrapper, "getBoundingClientRect").mockImplementation(
+      () => new DOMRect(0, 0, 288, visible()),
+    );
+    Object.defineProperty(wrapper, "clientWidth", { configurable: true, get: () => 288 });
+    Object.defineProperty(wrapper, "clientHeight", {
+      configurable: true,
+      get: () => visible(),
+    });
+    return host;
+  }
+
+  /** The visible map changed: every observer reports, then it settles. */
+  function layoutChanged(): void {
+    for (const callback of observerCallbacks) callback();
+    runFrames(300);
+  }
+
+  const followCommand = {
+    coordinate: [0, 51] as Coordinate,
+    zoom: 16,
+    bearingDegrees: 90,
+    pitchDegrees: 35,
+    animate: true,
+    followOffset: true,
+  };
+
+  it("reports the clipped height to the caller and keeps its attribution at the visible bottom", () => {
+    const onVisibleRegionChange = vi.fn();
+    const mock = createMockMapFactory();
+    const { container } = render(
+      <div style={{ overflowY: "hidden" }}>
+        <MapView
+          points={[]}
+          mapFactory={mock.factory}
+          onVisibleRegionChange={onVisibleRegionChange}
+        />
+      </div>,
+    );
+    const wrapper = container.firstElementChild as HTMLElement;
+    const host = stubLayout(wrapper, () => 128);
+    layoutChanged();
+
+    expect(onVisibleRegionChange).toHaveBeenLastCalledWith(32);
+    expect(host.parentElement?.style.getPropertyValue("--map-clipped-bottom")).toBe(
+      "32px",
+    );
+  });
+
+  it("defers a renewal while a pointer is held on the map, so it never cancels a drag that has not yet been recognised", () => {
+    const mock = createMockMapFactory();
+    let visible = 160;
+    const { container } = render(
+      <div style={{ overflowY: "hidden" }}>
+        <MapView
+          points={[]}
+          mapFactory={mock.factory}
+          cameraTarget={followCommand}
+          followFramingActive={true}
+        />
+      </div>,
+    );
+    const host = stubLayout(container.firstElementChild as HTMLElement, () => visible);
+    layoutChanged();
+    mock.triggerLoad();
+    const calls = mock.setCameraSpy.mock.calls.length;
+
+    host.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1 }));
+    visible = 128;
+    layoutChanged();
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(calls);
+
+    // Released without becoming a gesture (a tap): the renewal runs now.
+    act(() => {
+      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 }));
+    });
+    expect(mock.setCameraSpy).toHaveBeenCalledTimes(calls + 1);
+    const renewed = mock.setCameraSpy.mock.lastCall?.[4] as { followOffsetPx: number };
+    expect(renewed.followOffsetPx).toBeLessThan(60);
+  });
+
+  for (const ending of ["a genuine gesture", "North-up"] as const) {
+    it(`renews the current follow command when the visible map changes, and nothing after ${ending}`, () => {
+      const mock = createMockMapFactory();
+      let visible = 160;
+      const { container, rerender } = render(
+        <div style={{ overflowY: "hidden" }}>
+          <MapView
+            points={[]}
+            mapFactory={mock.factory}
+            cameraTarget={followCommand}
+            followFramingActive={true}
+          />
+        </div>,
+      );
+      const wrapper = container.firstElementChild as HTMLElement;
+      stubLayout(wrapper, () => visible);
+      layoutChanged();
+      mock.triggerLoad();
+      // Unclipped: the ordinary ease, with no explicit offset.
+      expect(mock.setCameraSpy).toHaveBeenLastCalledWith([0, 51], 16, 90, 35, {
+        animate: true,
+        followOffset: true,
+      });
+      mock.projectSpy.mockReturnValue({ x: 144, y: 140 });
+
+      visible = 128;
+      layoutChanged();
+      expect(mock.setCameraSpy).toHaveBeenLastCalledWith([0, 51], 16, 90, 35, {
+        animate: true,
+        followOffset: true,
+        followOffsetPx: expect.any(Number) as number,
+      });
+      const renewed = mock.setCameraSpy.mock.lastCall?.[4] as { followOffsetPx: number };
+      expect(renewed.followOffsetPx).toBeLessThan(60);
+
+      if (ending === "a genuine gesture") {
+        act(() => {
+          mock.triggerUserCameraInteraction();
+        });
+      } else {
+        rerender(
+          <div style={{ overflowY: "hidden" }}>
+            <MapView
+              points={[]}
+              mapFactory={mock.factory}
+              cameraTarget={followCommand}
+              orientNorthTarget={{ requestId: "north-1" }}
+              followFramingActive={true}
+            />
+          </div>,
+        );
+      }
+      const calls = mock.setCameraSpy.mock.calls.length;
+      visible = 100;
+      layoutChanged();
+      visible = 160;
+      layoutChanged();
+      expect(mock.setCameraSpy).toHaveBeenCalledTimes(calls);
+    });
+  }
+});

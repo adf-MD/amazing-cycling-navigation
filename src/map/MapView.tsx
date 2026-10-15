@@ -1,5 +1,12 @@
 import { useTranslate } from "../i18n/useTranslate.ts";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { StyleSpecification } from "maplibre-gl";
@@ -16,12 +23,23 @@ import {
 } from "../navigation/routeFeaturePalette.ts";
 import {
   createMapLibreMap,
+  FOLLOW_VERTICAL_OFFSET_PX,
   type LineLayerPaint,
   type MapErrorCategory,
   type MapFactory,
   type MapLibreLike,
 } from "./mapAdapter.ts";
 import type { MapTapInput } from "./mapTapInput.ts";
+import {
+  clippingAncestors,
+  hostRelativeRect,
+  measureVisibleRegion,
+} from "./followFraming.ts";
+import {
+  createFollowFramingController,
+  type FollowFramingController,
+  type FramingMeasurement,
+} from "./followFramingController.ts";
 import { recordMapAttempt, type MapDiagnosticCategory } from "./mapDiagnostics.ts";
 import {
   describeMapImageryRecovery,
@@ -736,7 +754,21 @@ export interface MapViewProps {
    * any effect, so the map canvas is never recreated by a change. */
   attributionContainer?: HTMLElement | null;
   statusOverlayContainer?: HTMLElement | null;
+  /** Item 145: true while the caller's camera is genuinely following, so a
+   * change in the visible map may re-frame the current follow command (see
+   * followFramingController.ts). Omitted (Planning), nothing is re-framed. */
+  followFramingActive?: boolean;
+  /** Item 145: the caller's own overlays that must not cover the followed
+   * rider (the climb cue), besides the map's own attribution. Pass a stable
+   * array: a new identity is treated as a change in the overlays. */
+  followFramingObstacles?: readonly HTMLElement[];
+  /** Item 145: the canvas height hidden below by clipping ancestors, in CSS
+   * px, reported on change, so a caller can keep its own bottom-anchored
+   * overlays at the visible bottom (`--map-clipped-bottom`). */
+  onVisibleRegionChange?: (clippedBottomPx: number) => void;
 }
+
+const NO_FOLLOW_FRAMING_OBSTACLES: readonly HTMLElement[] = [];
 
 /**
  * Route and position are added as GeoJSON sources/layers independent of
@@ -777,10 +809,34 @@ export function MapView({
   onRecoveryFramingEligible,
   attributionContainer = null,
   statusOverlayContainer = null,
+  followFramingActive = false,
+  followFramingObstacles = NO_FOLLOW_FRAMING_OBSTACLES,
+  onVisibleRegionChange,
 }: MapViewProps) {
   const translator = useTranslate();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreLike | null>(null);
+  // Item 145: the follow framing (followFramingController.ts). The root is
+  // the attribution's containing block; the observer watches the canvas
+  // host, its clipping ancestors and the overlays.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const attributionRef = useRef<HTMLDivElement | null>(null);
+  const followFramingRef = useRef<FollowFramingController | null>(null);
+  const followFramingObserverRef = useRef<{
+    observer: ResizeObserver;
+    targets: readonly Element[];
+  } | null>(null);
+  const followFramingObstaclesRef = useRef(followFramingObstacles);
+  // Item 145: pointers down on the map. A renewal's ease would stop
+  // MapLibre's gesture handlers, cancelling a drag that has begun but is not
+  // yet recognised, so a pointer held on the map counts as movement.
+  const mapPointersDownRef = useRef(new Set<number>());
+  const onVisibleRegionChangeRef = useRef(onVisibleRegionChange);
+  const reportedClippedBottomRef = useRef(0);
+  const [clippedBottomPx, setClippedBottomPx] = useState(0);
+  useEffect(() => {
+    onVisibleRegionChangeRef.current = onVisibleRegionChange;
+  }, [onVisibleRegionChange]);
   // Always call the latest callback without needing it in the map-creation
   // effect's dependency array (which would tear down and recreate the map
   // whenever the parent passes a new function identity).
@@ -1579,6 +1635,8 @@ export function MapView({
         // establish this generation — see pendingGenuineGestureSettleRef's
         // own doc comment.
         pendingGenuineGestureSettleRef.current = true;
+        // Item 145: a genuine gesture ends the follow framing's intent.
+        followFramingRef.current?.endFollow();
         // Fires unconditionally on every genuine gesture, regardless of
         // hasEstablishedCamera — this is the transient "the camera is
         // moving right now" signal a caller (e.g. Planning's own in-flight
@@ -1646,6 +1704,8 @@ export function MapView({
         // always internally consistent with them (one React batch).
         const position = currentPositionRef.current;
         setFollowAnchorPixel(position ? (map.project?.(position) ?? null) : null);
+        // Item 145: a renewal that found the camera moving runs now.
+        followFramingRef.current?.cameraSettled();
         // Backlog item 74: additive, narrower than the "not gated on
         // styleReady" decision above — see appliedCameraCommandGenerationRef's
         // own doc comment. Backlog item 81: the generation check alone is
@@ -2089,6 +2149,7 @@ export function MapView({
       const bounds = computeBoundingBox(points.map((point) => point.coordinate));
       if (bounds) {
         mapRef.current?.resize();
+        followFramingRef.current?.endFollow();
         mapRef.current?.fitBounds(bounds);
         const center = mapRef.current?.getCenter();
         if (center) setCameraCenter(center);
@@ -2116,6 +2177,124 @@ export function MapView({
       );
     }
   }, [points, styleStructurallyReady, suppressInitialOverviewFit, hasPlanningOverlay]);
+
+  // Item 145: the follow framing. MapView measures the visible part of its
+  // canvas host and the overlays that may cover the rider, places its own
+  // attribution at the visible bottom (--map-clipped-bottom on the root),
+  // reports the clipped height to the caller, and lets the controller
+  // re-frame the current follow command when the visible map changes. A
+  // floor-held canvas does not resize while its clipping ancestor shrinks,
+  // so the ancestors are observed directly; the observed set is refreshed
+  // on every measurement because ancestors can start or stop clipping.
+  // Declared before the camera-command effect below, so the controller
+  // exists before the first follow command is applied.
+  useEffect(() => {
+    const host = containerRef.current;
+    if (!host) return;
+    const observeFramingTargets = (targets: Element[]) => {
+      const current = followFramingObserverRef.current;
+      if (!current) return;
+      if (
+        current.targets.length === targets.length &&
+        current.targets.every((target, index) => target === targets[index])
+      ) {
+        return;
+      }
+      current.observer.disconnect();
+      for (const target of targets) current.observer.observe(target);
+      current.targets = targets;
+    };
+    const measure = (): FramingMeasurement | null => {
+      const canvasHost = containerRef.current;
+      const root = rootRef.current;
+      if (!canvasHost || !root) return null;
+      const attribution = attributionRef.current;
+      const overlays = [
+        ...(attribution && root.contains(attribution) ? [attribution] : []),
+        ...followFramingObstaclesRef.current,
+      ];
+      const ancestors = clippingAncestors(canvasHost);
+      observeFramingTargets([canvasHost, ...ancestors, ...overlays]);
+      const region = measureVisibleRegion(canvasHost, ancestors);
+      if (!region) return null;
+      return {
+        region,
+        obstacles: overlays.map((overlay) => hostRelativeRect(canvasHost, overlay)),
+      };
+    };
+    const framing = (followFramingRef.current ??= createFollowFramingController(
+      {
+        measure,
+        project: (coordinate) => mapRef.current?.project?.(coordinate) ?? null,
+        isMoving: () =>
+          mapPointersDownRef.current.size > 0 || (mapRef.current?.isMoving?.() ?? false),
+        ease: (intent, offsetPx) => {
+          mapRef.current?.resize();
+          mapRef.current?.setCamera(
+            intent.coordinate,
+            intent.zoom,
+            intent.bearingDegrees,
+            intent.pitchDegrees,
+            { animate: true, followOffset: true, followOffsetPx: offsetPx },
+          );
+        },
+        publishClippedBottom: (px) => {
+          if (reportedClippedBottomRef.current === px) return;
+          reportedClippedBottomRef.current = px;
+          setClippedBottomPx(px);
+          onVisibleRegionChangeRef.current?.(px);
+        },
+        requestFrame: (callback) => window.requestAnimationFrame(callback),
+        cancelFrame: (handle) => {
+          window.cancelAnimationFrame(handle);
+        },
+        now: () => performance.now(),
+      },
+      FOLLOW_VERTICAL_OFFSET_PX,
+    ));
+    const observer = new ResizeObserver(() => {
+      framing.layoutChanged();
+    });
+    followFramingObserverRef.current = { observer, targets: [] };
+    observeFramingTargets([host]);
+    const pointersDown = mapPointersDownRef.current;
+    const onPointerDown = (event: PointerEvent) => {
+      pointersDown.add(event.pointerId);
+    };
+    // A release can land anywhere, so it is heard on the window. A drag that
+    // became a genuine gesture has ended the intent by now; a tap leaves a
+    // deferred renewal to run.
+    const onPointerEnd = (event: PointerEvent) => {
+      if (!pointersDown.delete(event.pointerId) || pointersDown.size > 0) return;
+      framing.cameraSettled();
+    };
+    host.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("pointerup", onPointerEnd, true);
+    window.addEventListener("pointercancel", onPointerEnd, true);
+    framing.layoutChanged();
+    return () => {
+      framing.stop();
+      observer.disconnect();
+      followFramingObserverRef.current = null;
+      host.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("pointerup", onPointerEnd, true);
+      window.removeEventListener("pointercancel", onPointerEnd, true);
+      pointersDown.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    followFramingRef.current?.setActive(followFramingActive);
+  }, [followFramingActive]);
+
+  useEffect(() => {
+    followFramingObstaclesRef.current = followFramingObstacles;
+    followFramingRef.current?.layoutChanged();
+  }, [followFramingObstacles]);
+
+  useEffect(() => {
+    followFramingRef.current?.layoutChanged();
+  }, [attributionContainer]);
 
   // Executes the camera controller's current command (live "following", a
   // one-time restore, or an explicit Riding Northwards/Follow-location
@@ -2201,12 +2380,35 @@ export function MapView({
       requestId: cameraTarget.requestId,
     };
     mapRef.current?.resize();
+    // Item 145: a live follow ease is the follow framing's intent, and its
+    // offset is decided in the visible map; omitted, the ordinary offset
+    // applies, so an unclipped, unobstructed map is eased exactly as before.
+    // Any other command ends the intent.
+    let followOffsetPx: number | undefined;
+    if (
+      cameraTarget.followOffset &&
+      cameraTarget.animate &&
+      cameraTarget.coordinate !== null
+    ) {
+      followOffsetPx = followFramingRef.current?.followCommand({
+        coordinate: cameraTarget.coordinate,
+        zoom: cameraTarget.zoom,
+        bearingDegrees: cameraTarget.bearingDegrees,
+        pitchDegrees: cameraTarget.pitchDegrees,
+      });
+    } else {
+      followFramingRef.current?.endFollow();
+    }
     mapRef.current?.setCamera(
       cameraTarget.coordinate,
       cameraTarget.zoom,
       cameraTarget.bearingDegrees,
       cameraTarget.pitchDegrees,
-      { animate: cameraTarget.animate, followOffset: cameraTarget.followOffset },
+      {
+        animate: cameraTarget.animate,
+        followOffset: cameraTarget.followOffset,
+        ...(followOffsetPx !== undefined ? { followOffsetPx } : {}),
+      },
     );
     // Backlog item 74: marks this generation as having a real, actually-
     // applied command, so a later settle can be trusted by
@@ -2229,6 +2431,7 @@ export function MapView({
     if (!styleStructurallyReady || !boundsTarget) return;
     if (lastAppliedBoundsRequestIdRef.current === boundsTarget.requestId) return;
     lastAppliedBoundsRequestIdRef.current = boundsTarget.requestId;
+    followFramingRef.current?.endFollow();
     // Backlog item 67: unconditionally clears divergence (unlike
     // centreTarget/orientNorthTarget below) — fitBounds is always fully
     // self-contained, genuinely establishing coordinate, zoom AND
@@ -2260,6 +2463,7 @@ export function MapView({
     if (!styleStructurallyReady || !centreTarget) return;
     if (lastAppliedCentreRequestIdRef.current === centreTarget.requestId) return;
     lastAppliedCentreRequestIdRef.current = centreTarget.requestId;
+    followFramingRef.current?.endFollow();
     // Backlog item 67: deliberately never clears divergence here —
     // centreOn only ever specifies coordinate, always leaving zoom/
     // bearing/pitch "unchanged" relative to the map's current transform,
@@ -2281,6 +2485,7 @@ export function MapView({
     if (lastAppliedOrientNorthRequestIdRef.current === orientNorthTarget.requestId)
       return;
     lastAppliedOrientNorthRequestIdRef.current = orientNorthTarget.requestId;
+    followFramingRef.current?.endFollow();
     // Backlog item 67: deliberately never clears divergence here — this
     // command always passes a null coordinate/zoom (leaving them
     // "unchanged"), which is meaningless on a freshly (re)created
@@ -2306,6 +2511,7 @@ export function MapView({
     if (!styleStructurallyReady || !zoomTarget) return;
     if (lastAppliedZoomRequestIdRef.current === zoomTarget.requestId) return;
     lastAppliedZoomRequestIdRef.current = zoomTarget.requestId;
+    followFramingRef.current?.endFollow();
     mapRef.current?.changeZoomBy(zoomTarget.delta);
   }, [zoomTarget, styleStructurallyReady]);
 
@@ -2470,6 +2676,7 @@ export function MapView({
       warningOverlaySelectedIndex,
     );
     if (!bounds) return;
+    followFramingRef.current?.endFollow();
     mapRef.current?.fitBounds(bounds);
     // Item 94 follow-up: a real warning-selection fit establishes this
     // generation too — see cameraEstablishedGenerationRef's own doc
@@ -2485,8 +2692,18 @@ export function MapView({
     styleStructurallyReady,
   ]);
 
+  // Item 145: the attribution sits at the visible bottom, not the canvas's
+  // (see the follow framing effect above). React's CSSProperties has no
+  // index signature for custom properties, hence the intersection.
+  const rootStyle: CSSProperties & Record<`--${string}`, string> = {
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    "--map-clipped-bottom": `${String(clippedBottomPx)}px`,
+  };
+
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+    <div ref={rootRef} style={rootStyle}>
       <div
         ref={containerRef}
         // map-canvas-host: distinct from the unrelated screen-level
@@ -2650,7 +2867,11 @@ export function MapView({
         </div>
       </RenderInto>
       <RenderInto target={attributionContainer}>
-        <div className="map-attribution" data-testid="map-attribution">
+        <div
+          ref={attributionRef}
+          className="map-attribution"
+          data-testid="map-attribution"
+        >
           ©{" "}
           <a href={tileSource.attribution.url} target="_blank" rel="noreferrer">
             {tileSource.attribution.text}

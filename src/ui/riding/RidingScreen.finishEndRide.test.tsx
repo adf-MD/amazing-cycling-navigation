@@ -280,9 +280,7 @@ describe("RidingScreen Finish/End ride", () => {
     // confirmation is open.
     expect(screen.getByRole("heading", { name: route.name })).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /No trusted turn information is available|Turn information is unavailable/,
-      ),
+      screen.getByText(/No turn guidance available|Turn information is unavailable/),
     ).toBeInTheDocument();
     expect(screen.getByTestId("map-container")).toBeInTheDocument();
   });

@@ -73,11 +73,18 @@ const MAP_OVERLAY_INSET_PX = 8;
 const ROUTE_CORRIDOR_SAFETY_BAND_PX = 24;
 
 /** Backlog item 115: mirrors the `@container ride-map-overlay
- * (min-height: 14rem)` condition in src/index.css at the 16px root font
- * size these tests run at. Only ever used to DERIVE viewport heights that
- * land comfortably either side of it — never asserted against on its own,
- * which would merely restate the constant. */
-const BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX = 14 * 16;
+ * (min-height: 18rem)` condition in src/index.css (14rem until item 145
+ * raised it to clear the right-hand controls) at the 16px root font size
+ * these tests run at. Only ever used to DERIVE viewport heights that land
+ * comfortably either side of it — never asserted against on its own, which
+ * would merely restate the constant. */
+const BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX = 18 * 16;
+
+/** The immersive map's height at 200% root text in CI's pinned container
+ * when item 115's short-map rule was written (390x844, the untrusted-GPX
+ * paragraph above the map). Item 145's concise notice gives that map more
+ * room, so the 200% test derives its viewport to return to this height. */
+const SHORT_MAP_AT_200_PERCENT_PX = 174;
 
 /** Comfortably clear of the threshold in both directions, so neither
  * straddling case is decided by a subpixel rounding difference. */
@@ -1186,6 +1193,30 @@ test.describe("390×844 phone viewport", () => {
     await page.evaluate(() => {
       document.documentElement.style.fontSize = "200%";
     });
+    const rootFontPx = await page.evaluate(() =>
+      Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
+    );
+    expect(rootFontPx).toBe(32);
+
+    // Item 145 (0.4.72): the concise untrusted-GPX notice leaves this map
+    // about 294 px tall in CI instead of 174 px, which would take this test
+    // out of the short-map regime it exists for. The viewport is derived
+    // from a live measurement so the map returns to CI's original height.
+    const enlargedMap = page.getByTestId("map-container");
+    await expectClimbCueTextFullyReadable(page);
+    const enlargedViewport = page.viewportSize();
+    const enlargedMapBox = await enlargedMap.boundingBox();
+    if (!enlargedViewport || !enlargedMapBox)
+      throw new Error("expected a viewport and a map");
+    await page.setViewportSize({
+      width: enlargedViewport.width,
+      height: Math.round(
+        enlargedViewport.height - (enlargedMapBox.height - SHORT_MAP_AT_200_PERCENT_PX),
+      ),
+    });
+    await expect
+      .poll(async () => (await enlargedMap.boundingBox())?.height ?? 0)
+      .toBeCloseTo(SHORT_MAP_AT_200_PERCENT_PX, 0);
 
     await expectClimbCueTextFullyReadable(page);
     const cueButtonBox = await cueButton.boundingBox();
@@ -1235,9 +1266,13 @@ test.describe("390×844 phone viewport", () => {
       throw new Error("expected the map and the cue to have bounding boxes");
     }
 
-    // Still the constrained branch, and still top-positioned — the inset may
-    // be reduced to 0 by the correction above, never grown or bottom-anchored.
-    expect(mapBox.height).toBeLessThan(BOTTOM_PLACEMENT_MIN_MAP_HEIGHT_PX);
+    // The short-map regime this test exists for (item 115's 7rem rule at the
+    // measured root font), and still top-positioned — the inset may be
+    // reduced to 0 by the correction above, never grown or bottom-anchored.
+    expect(
+      mapBox.height,
+      `root font ${String(rootFontPx)} px, map ${JSON.stringify(mapBox)}`,
+    ).toBeLessThanOrEqual(7 * rootFontPx);
     expect(cueBox.y - mapBox.y).toBeGreaterThanOrEqual(0);
     expect(cueBox.y - mapBox.y).toBeLessThanOrEqual(MAP_OVERLAY_INSET_PX);
 
@@ -1712,9 +1747,10 @@ test.describe("390×844 at 200% text, climb cue in German", () => {
       document.documentElement.style.fontSize = "200%";
     });
     const mapContainer = page.locator('[data-testid="map-container"]');
+    // Below the 18rem lower-right threshold at 200% root text (32 px).
     await expect
       .poll(async () => (await mapContainer.boundingBox())?.height ?? 0)
-      .toBeLessThan(14 * 32);
+      .toBeLessThan(18 * 32);
 
     const [mapBox, cueBox, buttonBox] = await Promise.all([
       mapContainer.boundingBox(),

@@ -870,9 +870,7 @@ export const en = {
   "wakeLock.off": "Off",
   "wakeLock.active": "Screen staying awake.",
   "wakeLock.failed": "The screen could not be kept awake.",
-  "riding.untrustedGpx":
-    "No trusted turn information is available for this imported GPX. Follow the route line on the map.",
-  "riding.noTurnCues": "No turn cues",
+  "riding.untrustedGpx": "No turn guidance available.",
 
   // --- Shared unit and figure formatters ---------------------------------
   // translator: these carry the unit with the number, so the unit itself is

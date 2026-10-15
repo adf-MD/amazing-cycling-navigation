@@ -157,11 +157,7 @@ const MIGRATED_LITERALS: Readonly<Record<string, readonly string[]>> = {
     " ago`",
     " remaining`",
   ],
-  "RidingUntrustedGpxNotice.tsx": [
-    "No turn cues",
-    "No trusted turn information is available for this imported GP",
-    "Follow the route line on the map",
-  ],
+  "RidingUntrustedGpxNotice.tsx": ["No turn guidance available"],
   "RidingWakeLockControl.tsx": [
     "Screen on",
     "The screen could not be kept awake",

@@ -449,11 +449,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
       // route's source.kind is "gpx-import" with no trusted manoeuvres, so
       // RidingNextManoeuvrePanel shows its GPX-specific unavailable message
       // — proves the full Map-view panel is genuinely mounted and reachable.
-      expect(
-        screen.getByText(
-          /No trusted turn information is available for this imported GPX/,
-        ),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/No turn guidance available/)).toBeInTheDocument();
       expect(mapContainer()).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Zoom in" })).toBeInTheDocument();
       expect(
@@ -501,11 +497,7 @@ describe("RidingScreen — fixed Map/Profile shell (backlog item 56)", () => {
       // renders this message at all) — it must remain reachable from Profile
       // too. See RidingScreen.untrustedGpxNotice.test.tsx for the dedicated
       // coverage of its own timing/persistence behaviour.
-      expect(
-        screen.getByText(
-          /No trusted turn information is available for this imported GPX/,
-        ),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/No turn guidance available/)).toBeInTheDocument();
     });
   });
 
