@@ -133,6 +133,14 @@ None of these blocks acceptance of the item it came from. Record one if it occur
   - **A deployment-only retry,** reported by the rider, succeeded: the run's second attempt shows Deploy passing in 17 s, and the live site then served `0.4.71` / `f07d348`. The retry is not an end-to-end runtime sample, and no workflow or timeout change follows.
   - **Monitoring:** heuristic 2 is still met by the same, already reviewed runs: the last three longest shard jobs were 1,024, 1,000 and 924 s. No new review is due. `f07d348` changed documentation only, so the `0.4.71` / `72f1084` phone check stands.
 
+  **Run 38607781112**, for the documentation commit `52e03cb` on 14 October 2026, failed:
+
+  - **The figures:** Verify and build passed in 319 s; the shard jobs took 688, 948, 620 and 978 s, shard 3's test step 548 s of its 620 s job. Deploy was skipped, so the live site stayed `0.4.71` / `f07d348`.
+  - **What failed:** `android-chrome`'s "a double-tap zoom changes the zoom and places nothing" in `androidPlanningTouchPlacement.spec.ts`: its zoom poll (line 504) found no change.
+  - **The cause, test timing:** the rider's reviewer inspected the retained artifact (`playwright-failures-38607781112-1-shard-3`). By the trace's command times, the nominal 100 ms gap took 416 ms and the second `touchStart` 233 ms to return, so the two `touchEnd` commands were 718.6 ms apart. The double tap sent no timestamps, so each touch event's `timeStamp` followed its command's arrival, and MapLibre 6.6.0 zooms only when the tap ends are under 500 ms apart. That CI's events were further apart is inferred from those command times; a controlled local reproduction confirmed the DOM mechanism ([record](history/item-146.md#double-tap-timestamps-15-october-2026)).
+  - **The repair, test-only:** all four events take explicit CDP timestamps from one origin and one schedule, and the test attaches the recorded touch timing and checks it against MapLibre's limits before the zoom poll.
+  - **Monitoring:** no review heuristic fired. The last three longest shard jobs were 1,000, 924 and 978 s: none reached 1,080 s, and only one reached 1,000 s.
+
   **Since 8 October 2026, [item 146's conclusion](history/item-146.md#conclusion-8-october-2026) sets how these durations are monitored:** the completed shard jobs of every ordinary run, failed workflows included, checked against review heuristics that are not limits.
 
 ## Dated acceptance record

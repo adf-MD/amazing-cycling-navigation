@@ -215,3 +215,34 @@ That meets heuristic 2. None reached 1,080 s, and the latest left 200 s of headr
 - a temporary allocation experiment against CI per-test durations, then a full CI run.
 
 `PWTEST_SHARD_WEIGHTS` stays not recommended, as the audit found: it is internal and undocumented. No timeout, retry, skip or coverage change is proposed.
+
+<a id="double-tap-timestamps-15-october-2026"></a>
+
+### Follow-up: the double tap's timestamps, 15 October 2026
+
+**The trigger.** The deferred "CDP touch timestamps" row above named a CI failure in `doubleTap` or `androidMapCameraGestureRace` as its revisit condition. Run 38607781112, for the documentation commit `52e03cb`, failed `android-chrome`'s double-tap zoom case: its zoom poll found no change, and Deploy was skipped ([run record](../current-status.md)).
+
+**The CI evidence, from command times.** The rider's reviewer inspected the retained artifact (`playwright-failures-38607781112-1-shard-3`, ID 11916128520). In its trace, the first `touchStart` and `touchEnd` began 55.6 ms apart, the nominal 100 ms gap lasted 416.147 ms, and the second `touchStart` took 232.851 ms to return, so the two `touchEnd` commands began 718.636 ms apart. These are command timings, not DOM timestamps. MapLibre 6.6.0's `TapRecognizer` needs successive tap ends under 500 ms apart by `TouchEvent.timeStamp`, and `doubleTap` sent no timestamps.
+
+**The mechanism, reproduced locally** in the CI image by digest, under `android-chrome`, with two workers and no retries. A harness outside the repository delayed only the helper's await of the first `touchEnd` acknowledgement by 600 ms, after the event had been dispatched. The intervals are differences of DOM `timeStamp`:
+
+| Helper and delay, three runs each | Contact / gap / contact (ms) | Tap ends apart (ms) | Zoom      | Waypoints |
+| --------------------------------- | ---------------------------- | ------------------- | --------- | --------- |
+| `52e03cb`'s, none                 | 62–71 / 122–179 / 62–307     | 184–486             | changed   | 0         |
+| `52e03cb`'s, 600 ms               | 59–61 / 740–762 / 56–107     | 796–869             | unchanged | 0         |
+| Repaired, 600 ms                  | 40.0 / 100.0 / 40.0, ±0.1    | 140.0–140.1         | changed   | 0         |
+
+- **Without timestamps,** each event's `timeStamp` followed its command's send, so the late acknowledgement moved the second tap. With the repaired schedule, the commands were still sent 717–765 ms apart across the gap, but the events kept their 0, 40, 140 and 180 ms times.
+- **No timestamp lay in the future:** every event's `timeStamp` was at or before its receipt `performance.now()`, the same clock in the same units.
+- **The old margin could be small without any delay:** one undelayed run had a 306.5 ms second contact, and tap ends 485.6 ms apart. That is one run, and no rate is claimed.
+- No touch or pointer cancellation was recorded.
+
+**The repair, test-only.** `doubleTap` keeps one CDP session, genuine stationary `Input.dispatchTouchEvent`, and its real 40 ms contacts and 100 ms gap. All four events take explicit timestamps from one origin and one schedule, at 0, 40, 140 and 180 ms, each covered by the real waits before it; the session is detached in `finally`. The spec's recorder now also keeps `touchend`, `touchcancel` and `pointercancel`, with each event's `timeStamp`. Before the zoom poll, the test attaches the gesture's input and timing, then checks two contacts, no cancellation, each contact at most 500 ms, and tap ends under 500 ms apart. The original zoom, touch, click and zero-waypoint assertions follow, counting each recorded event once.
+
+**Verification.**
+
+- **Controls on the committed test, with the same 600 ms delay:** with `52e03cb`'s helper restored, it failed at the new check after 4.1 s (tap ends 784 ms apart, against under 500), with the attachment in its report and retained trace. With the repaired helper it passed.
+- **Ordinary runs:** the complete spec passed, 8 of 8, and the double-tap case 10 of 10 with retries off. Its contacts were 39.9–40.1 ms, and its tap ends 139.9–140.0 ms apart.
+- **Checks:** lint, typecheck and build passed. Production code, MapLibre, thresholds, timeouts, retries and CI are unchanged.
+
+**Still deferred:** `androidMapCameraGestureRace` keeps the same exposure, under the row's existing condition. This repair's own CI run is reported separately.

@@ -47,6 +47,12 @@ const PAST_RECALCULATION_DEBOUNCE_MS = 1_500;
 /** Between CDP touch events — androidMapCameraGestureRace.spec.ts found
  * unpaced dispatch unreliable, and this mirrors its spacing. */
 const TOUCH_STEP_MS = 40;
+/** Between a double tap's two contacts. */
+const DOUBLE_TAP_GAP_MS = 100;
+/** MapLibre 6.6.0's tap recogniser (tap_recognizer.ts), judged by
+ * TouchEvent.timeStamp: a contact may last at most this long, and a
+ * double tap's second tap must end less than this after the first. */
+const MAPLIBRE_TAP_LIMIT_MS = 500;
 
 interface Point {
   x: number;
@@ -63,15 +69,25 @@ interface Box {
 interface RecordedInput {
   type: string;
   pointerType: string | null;
+  timeStamp: number;
 }
 
 /** Records, in the capture phase, every input event that reaches MapLibre's
- * canvas container. Installed before any page script runs. */
+ * canvas container, with its timeStamp — which MapLibre's tap recogniser
+ * reads — and any touch or pointer cancellation, which resets it.
+ * Installed before any page script runs. */
 async function installInputRecorder(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const log: { type: string; pointerType: string | null }[] = [];
+    const log: { type: string; pointerType: string | null; timeStamp: number }[] = [];
     (globalThis as unknown as { __item123InputLog: typeof log }).__item123InputLog = log;
-    for (const type of ["pointerdown", "touchstart", "click"]) {
+    for (const type of [
+      "pointerdown",
+      "pointercancel",
+      "touchstart",
+      "touchend",
+      "touchcancel",
+      "click",
+    ]) {
       document.addEventListener(
         type,
         (event) => {
@@ -81,6 +97,7 @@ async function installInputRecorder(page: Page): Promise<void> {
           log.push({
             type,
             pointerType: event instanceof PointerEvent ? event.pointerType : null,
+            timeStamp: event.timeStamp,
           });
         },
         { capture: true, passive: true },
@@ -276,19 +293,60 @@ async function twoFingerTap(page: Page, points: readonly [Point, Point]): Promis
 }
 
 /** Two taps at one point, through one CDP session and paced like a
- * finger (40ms contacts, a 100ms gap). A separate session per tap once
- * drifted outside MapLibre's 500ms double-tap window under a full parallel
- * run, and unpaced contacts are not read as a tap pair reliably at all. */
+ * finger: 40ms contacts and a 100ms gap, so the contacts span 0–40ms and
+ * 140–180ms. All four events carry CDP timestamps from that one schedule
+ * and one origin: as for twoFingerTap, a timeStamp otherwise follows its
+ * command's arrival, and a slow acknowledgement anywhere in the sequence —
+ * the gap between the taps included — stretches it. MapLibre 6.6.0 needs
+ * the second tap to end less than 500ms after the first. In CI run
+ * 38607781112 the double tap did not zoom; the retained trace's command
+ * times, as the rider's reviewer read them, show the nominal 100ms gap
+ * taking 416ms and the second touchStart 233ms to return, so the two
+ * touchEnd commands were 718.6ms apart. Each timestamp follows the real
+ * waits before it, so none is in the future. A separate session per tap
+ * once drifted outside the window too, and unpaced contacts are not read
+ * as a tap pair reliably at all. */
 async function doubleTap(page: Page, point: Point): Promise<void> {
   const cdp = await page.context().newCDPSession(page);
   const touchPoints = [{ x: point.x, y: point.y, id: 1 }];
-  for (let tap = 0; tap < 2; tap += 1) {
-    if (tap > 0) await page.waitForTimeout(100);
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints });
-    await page.waitForTimeout(TOUCH_STEP_MS);
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  const origin = Date.now() / 1000;
+  const at = (ms: number) => origin + ms / 1000;
+  try {
+    for (let tap = 0; tap < 2; tap += 1) {
+      const startMs = tap * (TOUCH_STEP_MS + DOUBLE_TAP_GAP_MS);
+      if (tap > 0) await page.waitForTimeout(DOUBLE_TAP_GAP_MS);
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints,
+        timestamp: at(startMs),
+      });
+      await page.waitForTimeout(TOUCH_STEP_MS);
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+        timestamp: at(startMs + TOUCH_STEP_MS),
+      });
+    }
+  } finally {
+    await cdp.detach();
   }
-  await cdp.detach();
+}
+
+/** A recorded double tap's timing, as MapLibre's tap recogniser sees it. */
+function doubleTapTiming(input: readonly RecordedInput[]) {
+  const timesOf = (type: string) =>
+    input.filter((entry) => entry.type === type).map((entry) => entry.timeStamp);
+  const starts = timesOf("touchstart");
+  const ends = timesOf("touchend");
+  return {
+    starts,
+    ends,
+    contactsMs: starts.map((start, index) => (ends[index] ?? Number.NaN) - start),
+    tapEndIntervalMs: ends.length === 2 ? ends[1] - ends[0] : Number.NaN,
+    cancellations: input
+      .filter((entry) => entry.type === "touchcancel" || entry.type === "pointercancel")
+      .map((entry) => entry.type),
+  };
 }
 
 /** A pen tap through Chromium's own input pipeline — pointerType "pen". */
@@ -493,17 +551,40 @@ test.describe("Planning touch placement under genuine touch (item 123)", () => {
   test("a double-tap zoom changes the zoom and places nothing", async ({
     page,
     context,
-  }) => {
+  }, testInfo) => {
     const fixture = await openPlanning(page, context);
     const point = await openMapPoint(page, fixture.map);
 
     const zoomBeforeDoubleTap = await fixture.map.getAttribute("data-camera-zoom");
     await doubleTap(page, point);
+    // Each touch command has returned by now. The gesture's input is kept
+    // and attached before any assertion, so a failure or timeout keeps it.
+    const gestureInput = await takeRecordedInput(page);
+    const timing = doubleTapTiming(gestureInput);
+    await testInfo.attach("double-tap input", {
+      body: JSON.stringify({ zoomBeforeDoubleTap, timing, gestureInput }, null, 2),
+      contentType: "application/json",
+    });
+    expect(timing.cancellations, "no touch or pointer cancellation").toEqual([]);
+    expect(timing.starts, "two touchstarts reached the map").toHaveLength(2);
+    expect(timing.ends, "two touchends reached the map").toHaveLength(2);
+    for (const contactMs of timing.contactsMs) {
+      expect(contactMs, "a contact MapLibre accepts as a tap").toBeGreaterThanOrEqual(0);
+      expect(contactMs, "a contact MapLibre accepts as a tap").toBeLessThanOrEqual(
+        MAPLIBRE_TAP_LIMIT_MS,
+      );
+    }
+    expect(
+      timing.tapEndIntervalMs,
+      "the second tap ends inside MapLibre's double-tap window",
+    ).toBeLessThan(MAPLIBRE_TAP_LIMIT_MS);
     await expect
       .poll(() => fixture.map.getAttribute("data-camera-zoom"))
       .not.toBe(zoomBeforeDoubleTap);
     await settle(page);
-    const doubleTapInput = await takeRecordedInput(page);
+    // Anything recorded after the gesture's commands returned, such as a
+    // synthesised click, joins the kept input: every event counted once.
+    const doubleTapInput = [...gestureInput, ...(await takeRecordedInput(page))];
     expect(countOf(doubleTapInput, "pointerdown", "touch")).toBe(2);
     expect(
       countOf(doubleTapInput, "click"),
