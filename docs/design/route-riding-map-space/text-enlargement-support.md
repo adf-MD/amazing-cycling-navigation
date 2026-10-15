@@ -4,7 +4,7 @@
 
 **Current direction (13 October 2026):** the rider chose to explore two app-controlled text modes, Regular and Larger, supported at default browser text and 100% page zoom across a documented range of phone sizes ([proposal](text-modes-proposal.md)). The support levels A–C below are superseded as the current proposal. In particular, the tests' 200% root text is proposed as a non-blocking diagnostic rather than level B's acceptance condition. The mechanisms, evidence and limitations stay as recorded.
 
-**Update (12 October 2026):** the stationary check below has been run on the installed iPhone 13 (iOS 26.6.1, German, `4164bcc`). Larger Text and Control Centre's Text Size produced no visible enlargement; Display Zoom and Safari's Page Zoom setting did change the installed app; pinch zoom works and can be reversed. Its record is in [`current-status.md`](../../project/current-status.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026), and its diagnosis and proposals in [Device zoom findings](device-zoom-findings.md). Summary points 1, 2 and 4, the mechanism table and the Larger Text section are revised accordingly; the rest is the 9 October record.
+**Update (12 October 2026):** the stationary check below has been run on the installed iPhone 13 (iOS 26.6.1, German, `4164bcc`). Larger Text and Control Centre's Text Size produced no visible enlargement; Display Zoom and Safari's Page Zoom setting did change the installed app; pinch zoom works and can be reversed. Its record is in [`current-status-archive-2.md`](../../project/current-status-archive-2.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026), and its diagnosis and proposals in [Device zoom findings](device-zoom-findings.md). Summary points 1, 2 and 4, the mechanism table and the Larger Text section are revised accordingly; the rest is the 9 October record.
 
 E2, E2+N, hiding the remaining ascent and the extra Screen on taps all remain unapproved. The companion reports are [Riding information priorities](information-priorities.md) and [the first report](README.md).
 
@@ -262,7 +262,7 @@ These are carried forward unchanged from the [information-priorities report](inf
 
 ## Stationary check on the installed iPhone
 
-**Run on 12 October 2026;** its results are recorded in [`current-status.md`](../../project/current-status.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026) and diagnosed in [Device zoom findings](device-zoom-findings.md). The checklist is kept as written.
+**Run on 12 October 2026;** its results are recorded in [`current-status-archive-2.md`](../../project/current-status-archive-2.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026) and diagnosed in [Device zoom findings](device-zoom-findings.md). The checklist is kept as written.
 
 On the installed ACN Home Screen app, in portrait. **Note each setting before changing it, and put it back afterwards.** Desktop WebKit does not substitute for any of these.
 

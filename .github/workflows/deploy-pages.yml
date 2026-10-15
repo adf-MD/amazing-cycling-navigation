@@ -79,8 +79,10 @@ jobs:
   # Shards rather than a longer timeout: backlog item 116 kept the 20-minute
   # limit and asked for the suite to be optimised or sharded if it ever
   # approached it. Two shards since bac3553; four since item 133, when the
-  # longer shard's job reached 15 min 56 s. The denominator appears in the
-  # job name, the matrix and the --shard argument, and all three must agree.
+  # longer shard's job reached 15 min 56 s. Since item 146's rebalancing, each
+  # job runs its quarter of each engine (see the test step), so WebKit's slower
+  # cases no longer all fall to the last shard. The denominator appears in the
+  # job name, the matrix and both --shard arguments, and all must agree.
   # fail-fast is off so that one shard failing never cancels another shard's
   # run and failure evidence. Deploy's `needs: e2e` waits for, and requires
   # success from, every shard.
@@ -151,11 +153,26 @@ jobs:
       # mixed with the list output. The file is written outside test-results/,
       # so the failure evidence below is unchanged, and only when the run
       # ends: a run killed before then leaves no report.
+      #
+      # Item 146's rebalancing: two Playwright runs, each this job's quarter of
+      # its own selection, so every case still runs exactly once across the
+      # four jobs — the Chromium projects (chromium, then android-chrome),
+      # then webkit-smoke. Each run starts and stops its own preview server.
+      # The second runs even if the first fails, and the step fails if either
+      # does. Each has its own JSON report and its own --output directory:
+      # Playwright clears its output directory when a run starts, so a shared
+      # one would delete the first run's failure evidence.
       - name: End-to-end test suite
         id: e2e
-        env:
-          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/e2e-timing-shard-${{ matrix.shard }}.json
-        run: npm run e2e -- --shard=${{ matrix.shard }}/4 --reporter=list,json
+        run: |
+          status=0
+          PLAYWRIGHT_JSON_OUTPUT_FILE=playwright-report/e2e-timing-shard-${{ matrix.shard }}-chromium.json \
+            npm run e2e -- --project=chromium --project=android-chrome --shard=${{ matrix.shard }}/4 \
+            --output=test-results/chromium --reporter=list,json || status=1
+          PLAYWRIGHT_JSON_OUTPUT_FILE=playwright-report/e2e-timing-shard-${{ matrix.shard }}-webkit.json \
+            npm run e2e -- --project=webkit-smoke --shard=${{ matrix.shard }}/4 \
+            --output=test-results/webkit --reporter=list,json || status=1
+          exit $status
 
       # Backlog item 116. Playwright writes a trace, a screenshot and an
       # error context for a failed test only (see playwright.config.ts), and
@@ -166,9 +183,10 @@ jobs:
       # the conclusion check keeps an earlier step's failure (toolchain,
       # npm ci, build) from uploading an empty directory. if-no-files-found:
       # ignore so a missing directory can never mask the real test failure.
-      # Only test-results/ is uploaded — never dist/, node_modules/ or the
-      # repository root. No permissions are needed: upload-artifact uses the
-      # Actions runtime token, not GITHUB_TOKEN.
+      # Only test-results/, holding both runs' directories, is uploaded —
+      # never dist/, node_modules/ or the repository root. No permissions are
+      # needed: upload-artifact uses the Actions runtime token, not
+      # GITHUB_TOKEN.
       - name: Upload Playwright failure evidence
         if: ${{ failure() && steps.e2e.conclusion == 'failure' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -178,8 +196,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # Backlog item 146: this shard's JSON report, kept for timing and status
-      # comparisons. Uploaded when the test step itself finished, passed or
+      # Backlog item 146: this shard's two JSON reports, kept for timing and
+      # status comparisons. Uploaded when the test step itself finished, passed or
       # failed. Not on cancellation, a job timeout or an earlier step's
       # failure, since the report would be missing or meaningless; no artefact
       # is promised for every early termination, and if-no-files-found: warn
@@ -193,7 +211,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-timing-${{ github.run_id }}-${{ github.run_attempt }}-shard-${{ matrix.shard }}
-          path: playwright-report/e2e-timing-shard-${{ matrix.shard }}.json
+          path: playwright-report/e2e-timing-shard-${{ matrix.shard }}-*.json
           if-no-files-found: warn
           retention-days: 7
 

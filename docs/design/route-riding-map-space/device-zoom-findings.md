@@ -4,7 +4,7 @@
 
 **Status (12 October 2026): documentation only. The proposals await the rider's review, and nothing is implemented.** E2, E2+N, hiding the remaining ascent, extra Screen on taps and compound-failure exceptions all remain unapproved, and none is proposed here.
 
-- **The device evidence** is the rider's report of 12 October 2026 on the installed iPhone 13, recorded in [`current-status.md`](../../project/current-status.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026).
+- **The device evidence** is the rider's report of 12 October 2026 on the installed iPhone 13, recorded in [`current-status-archive-2.md`](../../project/current-status-archive-2.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026).
 - **The baseline** is `4164bcc`, the build the phone was running. Its application files are identical to `cdc0529` and to `677a03e`, the broad phone-accepted build; the diagnostics used the same `cdc0529` build as item 145's earlier reports.
 - **What did not change:** no application, test, CI or version.
 
@@ -46,7 +46,7 @@ The companion reports are [the first report](README.md), [Riding information pri
 
 ## The device evidence
 
-The rider's report, as recorded in [`current-status.md`](../../project/current-status.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026): the installed Home Screen ACN on an iPhone 13, iOS 26.6.1, in German, `0.4.69` / `4164bcc`.
+The rider's report, as recorded in [`current-status-archive-2.md`](../../project/current-status-archive-2.md#installed-iphone-observations-of-text-enlargement-mechanisms-item-145-reported-12-october-2026): the installed Home Screen ACN on an iPhone 13, iOS 26.6.1, in German, `0.4.69` / `4164bcc`.
 
 | Check                         | Setting                                                           | Observed                                                                                                                                                                                                                                                                       | Closed and reopened                |
 | ----------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |

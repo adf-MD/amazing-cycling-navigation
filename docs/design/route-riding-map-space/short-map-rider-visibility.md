@@ -1,6 +1,6 @@
 # Item 145 — rider visibility in short maps: a design proposal
 
-**Status (15 October 2026): approved with the refinements below and implemented in `0.4.72`** ([slice](../../project/backlog.md#item-145-short-map-slice)). It is part of [item 145](../../project/backlog.md#item-145), which stays open, as do the four cases until the installed-iPhone check; browser results do not close them. The queue stays 145 → 142 → 103 → 120.
+**Status (15 October 2026): approved with the refinements below and implemented in `0.4.72`** ([slice](../../project/backlog.md#item-145-short-map-slice)). It is part of [item 145](../../project/backlog.md#item-145), which stays open, as do the four cases: the stationary installed-iPhone check of 15 October 2026 passed but could not produce them ([record](../../project/current-status.md#installed-iphone-check-of-0472-build-7e6246a-item-145s-short-map-slice-reported-15-october-2026)), and browser results do not close them. The queue stays 145 → 142 → 103 → 120.
 
 ## Approved final design (15 October 2026)
 

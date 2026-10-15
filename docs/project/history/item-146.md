@@ -246,3 +246,135 @@ That meets heuristic 2. None reached 1,080 s, and the latest left 200 s of headr
 - **Checks:** lint, typecheck and build passed. Production code, MapLibre, thresholds, timeouts, retries and CI are unchanged.
 
 **Still deferred:** `androidMapCameraGestureRace` keeps the same exposure, under the row's existing condition. This repair's own CI run is reported separately.
+
+<a id="headroom-question-15-october-2026"></a>
+
+### The 134-second headroom question and a four-shard rebalancing proposal, 15 October 2026
+
+**Why now.** Run 38746731316, for `7e6246a` (`0.4.72`), passed every job, and shard 4 took 1,066 s: 134 s under the 1,200 s limit, below the ~150 s at which heuristic 3 asks for the question to be raised. Neither formal runtime heuristic fired: 1,066 s is under 1,080 s, and only one of the last three longest shard jobs (978, 988 and 1,066 s) reached 1,000 s. This is a question about headroom, not a breach.
+
+**The evidence.** The rider's reviewer retrieved both runs' JSON timing reports and job metadata, for this run and run 38712502462 (`5354bc6`), as one archive kept outside the repository; the eight reports' SHA-256 checksums match those recorded with them. The experiments also ran outside the repository: `--list` against temporary configurations, with no browser suite or timing run, and one failure-path probe in the CI image.
+
+**What changed between the two runs.** Summed test seconds, with the case counts in brackets. These are observations; no cause is attributed.
+
+| Shard | Summed        | New or rewritten                     | Moved out, then in    | Retained in the same shard | Phase     | Job         |
+| ----- | ------------- | ------------------------------------ | --------------------- | -------------------------- | --------- | ----------- |
+| 1     | 957 → 1,308   | —                                    | 56 in (4)             | 957 → 1,252 (304)          | 485 → 665 | 541 → 734   |
+| 2     | 1,779 → 1,246 | 3 notice tests rewritten: 27.3 → 6.3 | 66 out (4), 33 in (8) | 1,685 → 1,207 (297)        | 899 → 630 | 959 → 692   |
+| 3     | 1,008 → 862   | 9 new: 91.3                          | 36 out (8), 18 in (4) | 972 → 753 (295)            | 516 → 439 | 582 → 506   |
+| 4     | 1,830 → 1,975 | 9 new: 107.3                         | 33 out (4)            | 1,797 → 1,868 (299)        | 926 → 999 | 988 → 1,066 |
+
+- **Shard 4, as the reviewer found:** the nine new cases added 107.341 s, the four cases moved out had summed 32.753 s, and the retained cases grew by 70.466 s, so 1,830.119 → 1,975.173 s in all. The Playwright phase went from 926.455 to 999.024 s, the suite step from 927 to 1,000 s and the job from 988 to 1,066 s.
+- **Two workers:** in every shard of both runs, their busy times differed by under 6 s, and summed ÷ phase was 1.953–1.979. The phase exceeded the busier worker by 6.1–11.0 s, for start-up (the preview server included), the gaps between tests and teardown. Nothing here shows two-worker scaling failing.
+- **The retained cases, case by case** (run 2 ÷ run 1, for cases of at least 1 s):
+  - shard 1: every case slower, median 1.32, 10th to 90th percentile 1.15–1.49;
+  - shard 2: none slower, median 0.70, 0.59–0.86;
+  - shard 3: all but one faster, with medians of 0.67 for Android, 0.83 for Chromium and 0.79 for WebKit;
+  - shard 4: two thirds slower, median 1.03, 0.94–1.17.
+
+  One direction within each of shards 1–3 is consistent with differences in execution speed between jobs, but the reports do not establish a cause, and the spread within a shard is wide. Shard 4's +70.5 s is a small, mixed shift, and its cause is unestablished.
+
+- **Outside the suite step,** each job spent 56–68 s.
+- **The `0.4.72` estimate** ([slice](../backlog.md#item-145-short-map-slice)) forecast about +84 s summed for shard 4. The new and moved cases came to +74.6 s; the retained +70.5 s was not forecast. Within each run, half the summed time described the elapsed time closely; the miss came from the inputs. That corrects a statement made after the deployment, that halving was unreliable. Halving is still not a prediction of future durations, and the retained-case change has no established cause.
+
+**Why shard 4 carries the most.** In Playwright 1.61.1, with `fullyParallel` and no serial blocks or `beforeAll` hooks, every case is its own group. `--shard` takes contiguous runs of equal count, ordered by project, then worker hash, file name and declaration order. Shard 4 is therefore all WebKit: 308 cases summing 1,975 s, against 1,348 s per shard if the work were spread evenly.
+
+**Two candidates.** In both, every case still runs exactly once, with two workers per job; no test, timeout, retry or browser selection changes.
+
+- **A, the WebKit smoke split into two file-partitioned projects** (`playwright.config.ts` only):
+  - `webkit-smoke-1`, the smoke specs starting a to o (ten files), comes first;
+  - `webkit-smoke-2`, the rest of the smoke selection (19 files), comes last;
+  - `chromium` and `android-chrome` sit between them.
+
+  Both parts stay inside `/smoke\.spec\.ts$/` by construction.
+
+- **B, each engine sharded within the same four jobs** (the workflow only):
+  - each job runs `--project=chromium --project=android-chrome --shard=k/4`, then `--project=webkit-smoke --shard=k/4`;
+  - each run has its own JSON report and `--output` directory;
+  - the job fails if either run does.
+
+**The inventory proof.**
+
+- **Method:** a `--list` of the current configuration reproduced run 2's four shards, case for case.
+- **Exactly once:** for A and B, the listed shards together hold the 1,232 current cases, none twice and none missing; for B that is eight lists.
+- **A's projects:**
+  - they map back to `webkit-smoke` by file, and its two parts divide the same 29 smoke files;
+  - every project's resolved settings equal today's;
+  - a synthetic check showed that no file outside the smoke selection enters either part.
+- **B:** its configuration is unchanged.
+
+**Estimates, not predictions.**
+
+- **The method:**
+  - a two-worker simulation over the listed order. It reproduced every observed shard's busier worker within 0.5 s, and run 2's four jobs within 5 s;
+  - plus 8.8 s for each Playwright run (6.1–11.4 s observed), which covers its own preview server's start and stop;
+  - plus 1 s to start each run, and 63 s outside the step (56–68 s observed).
+- **B pays the per-run costs twice:** about 10 s more per job.
+
+| Allocation | Heaviest job, summed: run 1 / run 2 / per-case maximum | Its estimate  | Headroom  |
+| ---------- | ------------------------------------------------------ | ------------- | --------- |
+| Current    | 1,905 / 1,975 / 2,004                                  | 1,026–1,075 s | 125–174 s |
+| A          | 1,742 / 1,639 / 1,787                                  | 893–967 s     | 233–307 s |
+| B          | 1,669 / 1,555 / 1,702                                  | 865–935 s     | 265–335 s |
+
+- **B with the highest observed overheads:** with 11.4 s per run and 68 s per job, its heaviest job estimates 875–945 s. With the 82 s outside the step seen in run 38581636998, 889–959 s.
+- **B's 865–935 s is an estimate awaiting CI confirmation.**
+- **Sensitivity checks, neither statistical bounds nor guaranteed headroom:** with run 2's durations, the heaviest job's work was scaled.
+
+  | Heaviest job's work                              | Current | A       | B       |
+  | ------------------------------------------------ | ------- | ------- | ------- |
+  | ×1.15                                            | 1,209 s | 1,016 s | 982 s   |
+  | ×1.31 (shard 1's ratio of sums between the runs) | 1,367 s | 1,147 s | 1,107 s |
+
+- **A growth replay, not a hypothetical addition:** each scheme allocated `5354bc6`'s inventory, then `7e6246a`'s, with run 2's durations. The 18 framing cases and the three rewritten notice tests are counted once, in the second.
+
+  | Allocation | Heaviest job's rise, summed |
+  | ---------- | --------------------------- |
+  | Current    | +90 s                       |
+  | A          | +53 s                       |
+  | B          | +28 s                       |
+
+  Under B the nine WebKit cases still landed together, in job 4, which also carries the lightest end of the Chromium work.
+
+**B's failure path, probed in the CI image.** The probe was a single spec that fails in Chromium and passes in WebKit:
+
+- the step exited 1;
+- both JSON reports were written;
+- the first run's trace, screenshot and error context survived the second run.
+
+A control with one shared output directory lost them. The step behaved the same under `sh -e`.
+
+**Consequences:**
+
+- **For A:**
+  - reports name `webkit-smoke-1` and `-2`, so historical comparisons map by file;
+  - `--project=webkit-smoke` stops matching;
+  - comments in 27 spec files name the old project.
+- **For B:**
+  - each timing artefact holds two reports, `e2e-timing-shard-N-chromium.json` and `-webkit.json`;
+  - failure evidence sits under `test-results/chromium` and `test-results/webkit`;
+  - reproducing one CI job locally takes both commands;
+  - project names, the configuration and the test comments are unchanged.
+
+**The choice: B.** The rider chose it on 15 October 2026. It gives the largest estimated headroom and changes no project or test. It distributes the existing WebKit workload across the four jobs. Future additions still follow count-based allocation within each engine, so they may land together in one job.
+
+**Its uncertainties:**
+
+- most retained cases ran 0.6–1.5 times as long in one run as in the other;
+- within each engine the quarters are still split by count, so B's job 4 runs lighter than the others;
+- only a full CI run after implementation can confirm any of it.
+
+A fifth shard and the consolidation pilot remain the alternatives if four-shard rebalancing proves insufficient.
+
+**Implementation, 15 October 2026.** In `.github/workflows/deploy-pages.yml`, each of the four jobs keeps its test step (`id: e2e`), which now runs `--project=chromium --project=android-chrome --shard=k/4`, then `--project=webkit-smoke --shard=k/4`.
+
+- **Failures:** the second run starts even if the first fails, and the step fails if either does.
+- **Timing reports:** `e2e-timing-shard-k-chromium.json` and `-webkit.json`, both uploaded in the existing best-effort timing artefact.
+- **Failure evidence:** `test-results/chromium` and `test-results/webkit`, uploaded under the existing condition.
+- **Unchanged:** `playwright.config.ts`, the two workers, the 20-minute timeout, retries, the container image and Deploy's dependencies.
+- **Checks:**
+  - the eight commands, taken from the committed workflow, list all 1,232 current cases exactly once, including run 2's five skipped WebKit cases;
+  - the committed step matches the probed one;
+  - actionlint 1.7.7 reports nothing; shellcheck was not available.
+
+**Status:** implemented; CI confirmation was pending at commit time. The tests, timeouts, retries, Playwright configuration and shard count are unchanged. The evidence is in `~/acn-review/item-146-rebalance/`.
