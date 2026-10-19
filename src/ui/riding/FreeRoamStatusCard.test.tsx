@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
 import { FreeRoamStatusCard, type FreeRoamLiveStatus } from "./FreeRoamStatusCard.tsx";
 
@@ -545,5 +545,44 @@ describe("FreeRoamStatusCard: the transient delayed imagery row (backlog item 10
     expect(screen.getByTestId("map-load-error")).toHaveTextContent(
       "Map failed to load. Check your connection and try again.",
     );
+  });
+});
+
+describe("FreeRoamStatusCard: Screen on before the text, its refusal row after it (backlog item 145)", () => {
+  it("renders Screen on first and a refusal as exactly one alert in the slot after the text", async () => {
+    const fake = buildFakeWakeLockSource();
+    render(
+      <FreeRoamStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
+        wakeLock={{
+          desired: true,
+          onToggleDesired: vi.fn(),
+          wakeLockSource: fake.source,
+          clock: { now: () => 1_000 },
+        }}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Screen on" });
+    const text = document.querySelector(".ride-status-card-text");
+    expect(
+      button.compareDocumentPosition(text ?? button) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    await act(async () => {
+      fake.instances[0]?.rejectRequest(new Error("denied"));
+      await Promise.resolve();
+    });
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.closest(".ride-status-card-refusal-slot")).not.toBeNull();
+    expect(
+      (text?.compareDocumentPosition(alerts[0] ?? document.body) ?? 0) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });

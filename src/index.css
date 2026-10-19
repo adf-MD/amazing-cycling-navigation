@@ -1997,19 +1997,16 @@ button:focus-visible {
   align-items: center;
 }
 
-/* Quieter than default so the wake-lock control's optional failure text
- * never competes with the route title beneath it. The success status text
- * is hidden altogether rather than merely quiet — see .visually-hidden
- * below (backlog item 68; the control itself unified to a single toggle
- * button by item 82). */
-/* display:flex/flex-direction:column let the toggle button below fill this
- * control's full height (item 82 follow-up, 2026-08-26) — the control's own
- * height comes from .ride-status-card-main's align-items: stretch, and the
- * optional failure row simply sits beneath the grown button. */
+/* Quieter than default so the wake-lock control never competes with the
+ * route title beneath it. The success status text is hidden altogether
+ * rather than merely quiet — see .visually-hidden below (backlog item 68;
+ * the control itself unified to a single toggle button by item 82). Since
+ * item 145 the control floats at the top right of the status card's main
+ * region at its natural height (see .ride-status-card-main), no longer
+ * stretched to the text column's height as in item 82's follow-up. */
 .ride-wake-lock-control {
   display: flex;
   flex-direction: column;
-  flex: 0 0 auto;
   font-size: 0.85rem;
   color: var(--colour-text-muted);
 }
@@ -2020,17 +2017,25 @@ button:focus-visible {
  * since the base `button` rule sets no display. Styled entirely off the
  * aria-pressed attribute itself (below), not a separately-toggled class,
  * so the semantic state can never desync from the presentation. Inherits
- * the base button rule's real ≥44x44px touch target. `flex: 1 0 auto` and
- * `justify-content: center` (item 82 follow-up) let the button grow to
- * fill its stretched control column while keeping its two stacked spans
- * centred — a no-op when the button is already at its natural height. */
+ * the base button rule's real ≥44x44px touch target. `justify-content:
+ * center` keeps its two stacked spans centred wherever that minimum is
+ * taller than its content. */
 .wake-lock-toggle {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  flex: 1 0 auto;
   gap: 2px;
+}
+
+/* Item 145: in the status cards, Screen on's vertical padding is 2.5px
+ * rather than the base button's 8px, so its two lines fit the 44px
+ * touch-target minimum. That minimum still governs its height, which is
+ * otherwise its content's: nothing here fixes it. The horizontal padding is
+ * unchanged. */
+.ride-status-card .wake-lock-toggle {
+  padding-top: 2.5px;
+  padding-bottom: 2.5px;
 }
 
 .wake-lock-toggle-label {
@@ -2060,25 +2065,18 @@ button:focus-visible {
   color: var(--colour-accent);
 }
 
-/* Item 145: only while Screen on is refused, the control's wrapper stops being
- * a box, so the toggle stays beside the status text as usual and the failure
- * row becomes a full-width row of the card, its message beside the retry
- * where both fit. Inside the narrow control column the row used to widen it
- * past the card and push the retry off screen. */
-.ride-wake-lock-control:has(> .wake-lock-failure-row) {
-  display: contents;
-}
-
-.ride-wake-lock-control:has(> .wake-lock-failure-row) > .wake-lock-toggle {
-  flex: 0 0 auto;
-}
-
+/* Item 145: while Screen on is refused, its message and retry form a
+ * full-width row of the card beneath the status text, the message beside the
+ * retry where both fit (inside the narrow control column, the row used to
+ * widen it past the card and push the retry off screen). In the status cards
+ * the row renders into their refusal slot (.ride-status-card-refusal-slot),
+ * so it states the control's muted colour itself rather than inheriting it. */
 .wake-lock-failure-row {
   display: flex;
-  flex: 1 1 100%;
   align-items: center;
   gap: var(--space-8);
   flex-wrap: wrap;
+  color: var(--colour-text-muted);
 }
 
 .wake-lock-failure-row p {
@@ -2112,50 +2110,75 @@ button:focus-visible {
   font-size: 0.85rem;
 }
 
-/* The card's two-column main region (backlog item 75; two-column since the
- * item 82 follow-up, 2026-08-26): the text column on the left, the
- * wake-lock control on the right. align-items: stretch is load-bearing —
- * it makes both columns equal the taller one's natural height, so the
- * control fills the text column's height with no dead space beneath it,
- * and (when a wake-lock failure row makes the control the taller column)
- * the text column stretches to match while its own rows stay pinned to
- * its top via .ride-status-card-text's default justify-content: flex-start.
- * flex-wrap: wrap is carried over from the old single-row layout as a
- * narrow-width safety net; it is not, by itself, a proven fallback for
- * enlarged text — see .ride-status-card-text's own comment. */
+/* The card's main region (backlog item 75; since item 145 one block rather
+ * than item 82's two flex columns): Screen on floats at its top right at its
+ * natural height, and the status text flows beside it and continues at full
+ * width beneath it, so a long line neither pushes the control onto a row of
+ * its own nor stretches it. flow-root contains the float, so the region is
+ * exactly as tall as the taller of the text and the control. The control
+ * comes first in the markup for the float to work, so it is also read
+ * first; keyboard order is unchanged, since the text holds no control. */
 .ride-status-card-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: var(--space-8);
+  display: flow-root;
 }
 
-/* The left text column (item 82 follow-up): the compact vertical stack of
- * status/metric lines, grouped as one unit so the wake-lock control can
- * sit beside the whole stack instead of only its first line. min-width: 0
- * lets it shrink below its content width so long lines wrap internally
- * rather than forcing .ride-status-card-main to overflow instead of
- * wrapping the control onto its own line — this has only been measured
- * safe at the specific enlarged-text/short-landscape conditions this
- * item's own Playwright coverage exercises; do not assume it holds beyond
- * those without adding equivalent measurement first. */
+/* No bottom margin, so the card does not grow where Screen on is its tallest
+ * item (free roam); the left margin keeps the lines beside it 8px clear. */
+.ride-status-card-main > .ride-wake-lock-control {
+  float: right;
+  margin: 0 0 0 var(--space-8);
+}
+
+/* Item 145: the refusal row's slot, after the text, so the row is a
+ * full-width row beneath both the text and Screen on. Its own formatting
+ * context keeps the row's margin inside the slot rather than collapsing
+ * through it: collapsed, it left WebKit with a stale card 4px taller after
+ * the row was removed. */
+.ride-status-card-refusal-slot {
+  clear: both;
+  display: flow-root;
+}
+
+.ride-status-card-refusal-slot > .wake-lock-failure-row {
+  margin-top: var(--space-8);
+}
+
+/* The text: the compact vertical stack of status/metric lines. An ordinary
+ * block, not a flex or other formatting context, so its lines can flow
+ * beneath the floated control; they are spaced by margins, not a gap. */
 .ride-status-card-text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  flex: 1 1 auto;
-  min-width: 0;
+  display: block;
+}
+
+.ride-status-card-text > * + * {
+  margin-top: var(--space-4);
+}
+
+/* Each line hugs its own text, so its box shows where the text actually is,
+ * beside or beneath Screen on. */
+.ride-status-card-text > .ride-status-card-remaining,
+.ride-status-card-text > .ride-status-card-gps,
+.ride-status-card-text > .ride-status-card-detail {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+
+/* Item 145: route riding's GPS line always starts beneath Screen on, so it
+ * can use the card's full width whatever the control's or the preceding
+ * lines' heights, rather than only when those happen to match. Free roam's
+ * detail line is deliberately not held beneath it: there it would add a
+ * line's height for nothing. */
+.ride-status-card-text > .ride-status-card-gps {
+  clear: right;
 }
 
 /* The status label and the compact connectivity indicator (backlog item
  * 83) share one line inside .ride-status-card-text, rather than the
- * indicator becoming a new direct child of .ride-status-card-main — that
- * would need its own align-self override to avoid the main region's
- * load-bearing align-items: stretch, and would visibly separate from the
- * text column via justify-content: space-between when wakeLock is
- * absent. flex-wrap is the same narrow-width safety net as
- * .ride-status-card-main's own. */
+ * indicator becoming a new direct child of .ride-status-card-main, where it
+ * would fall outside the text that flows around Screen on. flex-wrap is a
+ * narrow-width safety net: beside Screen on, the label and the indicator
+ * wrap onto two lines rather than overflow. */
 .ride-status-card-status-row {
   display: flex;
   align-items: center;

@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { Clock } from "../../platform/clock.ts";
 import type { WakeLockSource } from "../../platform/wakeLock.ts";
@@ -9,6 +10,15 @@ export interface RidingWakeLockControlProps {
   onToggleDesired: (next: boolean) => void;
   wakeLockSource?: WakeLockSource;
   clock?: Clock;
+  /**
+   * Where the refusal row renders (backlog item 145). The status cards put
+   * this control before their text, so Screen on can float at the card's
+   * top right with the text flowing beside and beneath it, and pass a slot
+   * placed after the text: the row then stays a full-width row beneath the
+   * status rather than above it. `null` (the slot not attached yet) renders
+   * no row; omitted, the row renders inline after the button.
+   */
+  failureRowContainer?: Element | null;
 }
 
 /**
@@ -39,16 +49,31 @@ export interface RidingWakeLockControlProps {
  * text node. The battery/behaviour explanation previously behind an
  * in-context information popover now lives in Settings instead (item 82)
  * — this component owns no disclosure state any more.
+ *
+ * The refusal row (item 145): it is still this component's own element,
+ * mounted and unmounted with the failure status exactly as before, but it
+ * may render through a portal into `failureRowContainer`, so a card can
+ * place it after its text in reading order. Only one row ever exists.
  */
 export function RidingWakeLockControl({
   desired,
   onToggleDesired,
   wakeLockSource,
   clock,
+  failureRowContainer,
 }: RidingWakeLockControlProps) {
   const translator = useTranslate();
   const { t } = translator;
   const { status, retry } = useScreenWakeLock({ desired, wakeLockSource, clock });
+  const failureRow =
+    status === "unavailable" ? (
+      <div role="alert" className="wake-lock-failure-row">
+        <p>{t("wakeLock.failed")}</p>
+        <button type="button" onClick={retry}>
+          {t("ride.tryAgain")}
+        </button>
+      </div>
+    ) : null;
 
   return (
     <div className="ride-wake-lock-control">
@@ -70,14 +95,11 @@ export function RidingWakeLockControl({
           {t("wakeLock.active")}
         </span>
       ) : null}
-      {status === "unavailable" ? (
-        <div role="alert" className="wake-lock-failure-row">
-          <p>{t("wakeLock.failed")}</p>
-          <button type="button" onClick={retry}>
-            {t("ride.tryAgain")}
-          </button>
-        </div>
-      ) : null}
+      {failureRowContainer === undefined
+        ? failureRow
+        : failureRowContainer && failureRow
+          ? createPortal(failureRow, failureRowContainer)
+          : null}
     </div>
   );
 }

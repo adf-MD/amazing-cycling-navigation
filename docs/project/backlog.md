@@ -456,7 +456,7 @@ _Category: Interface and accessibility consistency_
        This item assesses the visibility of the field and the actions together, keyboard and visual-viewport behaviour included, without assuming that the two share a cause. Resolving either needs installed-iPhone evidence of the keyboard path.
 
      - **Constraints:** focusing the key field on opening Replace key would open the keyboard and could meet the open key-field zoom finding in [`current-status.md`](current-status.md); item 121's sticky-switcher release while the key form has focus; item 119's non-modal confirmations; and item 124's established pattern, under which focus moves with `preventScroll` and any reveal is the minimum, only while the rider is still at the operation. Coordinate with [item 125](#item-125)'s open question on restored focus.
-     - **Evidence required when implemented:** desktop keyboard measurements of focus and scroll in Chromium and WebKit, in English and German; VoiceOver on the installed iPhone; and a negative control for each change.
+     - **Evidence required when implemented:** desktop keyboard measurements of focus and scroll in Chromium and WebKit, in English and German; automated checks of the focus target, its accessible name and role in both engines; and a negative control for each change. **Updated 16 October 2026:** by the rider's standing preference, no manual VoiceOver check is requested ([ledger](current-status.md#how-to-read-this-ledger)), so what VoiceOver announces stays unverified.
 
 ---
 
@@ -713,12 +713,30 @@ _Category: Riding presentation_
      - **The refused Screen on slice, 14 October 2026 — candidate B approved, shipped in `0.4.71` and its ordinary presentation checked on the installed iPhone; the refused state has no native verification** ([record](#item-145-refused-screen-on-slice)). It is a partial correction: the four cases above stay unresolved, and their rider loss is not accepted.
      - **Rider visibility in short maps, a design proposal, 14 October 2026 — documentation only; it awaits the rider's review** ([proposal](../design/route-riding-map-space/short-map-rider-visibility.md)). Candidate A decides the follow camera's anchor within the visible map and keeps the bottom overlays at the visible bottom. In the browser it keeps the rider whole in the four cases and the ordinary failed End, in both engines and languages, and leaves every measured layout that needed no correction unchanged. The four cases stay open, and nothing is implemented or approved.
      - **The short-map slice, 15 October 2026 — the revised design approved by the rider and implemented in `0.4.72`, deployed by CI run 38746731316; its stationary checks passed on the installed iPhone, reported the same day** ([record](#item-145-short-map-slice)). A refused Screen on and a failed End were not exercised on the phone, so the four cases stay open.
+     - **The text-mode proposal refreshed against `0.4.72`, 16 October 2026 — documentation only; it awaits the rider's design review** ([refresh](../design/route-riding-map-space/text-modes-proposal.md#refresh-against-0472-16-october-2026)). Prototype L was measured in the CI image, in Chromium and WebKit, in English and German, in stages.
+       - **Recommended:**
+         - Larger at 112.5%, not 125%, committed from 360×667 to 440×956 at the measured insets, with nothing held at Regular size;
+         - Regular committed from 320×693, with 320×568 reported only;
+         - a relative root rule, and a Text size card after Language.
+       - **125%** loses the rider at 360×667 and 375×667 in location errors and on a long climb route. It would need a 360×780 corner and both holds.
+       - **The main remaining conflict:** Screen on dropping below a long status line, such as a minute-old stale fix, costs 55–70 px of map.
+         - It occurs in Regular at 320 px, and at 112.5% at 360–375 px in both engines. WebKit's apparent exception was a shorter "0s" line, corrected later the same day.
+         - P2, re-checked, avoids it but still breaks the refused row, so a scoped variant is proposed for design.
+       - **Tests:** every current blocking test kept, about 17 Larger cases added per engine, and the heaviest job estimated at about 963 s under Candidate B.
+       - **Later on 16 October 2026, a Screen on prototype, V1** ([prototype](../design/route-riding-map-space/text-modes-proposal.md#screen-on-prototype-v1-16-october-2026)), is one declaration, `.ride-status-card-text { flex: 1 1 0 }`, that keeps Screen on beside a long line and the refusal row full width.
+         - It removed every Screen on drop measured, kept 112.5% whole at 360×667 and 375×667 in both engines with nothing held, and passed all 141 existing blocking cases unchanged.
+         - It costs wrapped status lines, and at 200%, outside the proposed commitment, 20 px of map. In Regular at 320×693, a German location error after a failed End still leaves 46 px, with the rider 12% visible.
+       - **Later still, an adaptive variant, V2** ([prototype](../design/route-riding-map-space/text-modes-proposal.md#adaptive-screen-on-prototype-v2-16-october-2026)): a `12ch` basis capped at `max-content`, chosen from a measured sweep. It equals V1 in every ordinary snapshot measured and today in every 200% snapshot, so V1's 200% regression is gone, and it is recommended in V1's place.
+         - It corrects two earlier findings: all four map controls are absent by design in a location error, and WebKit's stale line never aged.
+         - The German Regular location error after a failed End still leaves 46 px, unresolved.
+       - **Nothing is implemented or approved,** and the four cases stay open.
+     - **The wrap-under slice, 19 October 2026 — V3R approved by the rider and implemented in `0.4.73`; CI, deployment and the installed-iPhone check are pending** ([record](#item-145-wrap-under-slice), [design](../design/route-riding-map-space/text-modes-proposal.md#chosen-design-v3r-implemented-in-0473-19-october-2026)). Screen on floats at the status card's top right at its natural height, with 2.5 px vertical padding and the 44 × 44 px minimum, and route riding's GPS line starts beneath it. In the CI fonts, the German Regular location error after a failed End at 320×693 keeps 64 px of map with the rider whole, where V2 left 46 px with the rider 12% visible. The four cases stay open, and Larger, the ranges and the support policy stay undecided.
 
 <a id="item-145-selector-slice"></a>
 
 ### Selector padding slice — implemented for `0.4.70` (14 October 2026)
 
-**Approved by the rider on 13 October 2026, narrower than the proposal's recommended slice, and implemented on 14 October 2026. Deployed by CI run 38535923412 and accepted on the installed iPhone, reported 14 October 2026** ([dated record](current-status.md#installed-iphone-acceptance-of-0470-build-5209fe7-item-145s-selector-reported-14-october-2026)). Item 145 stays open.
+**Approved by the rider on 13 October 2026, narrower than the proposal's recommended slice, and implemented on 14 October 2026. Deployed by CI run 38535923412 and accepted on the installed iPhone, reported 14 October 2026** ([dated record](current-status-archive-2.md#installed-iphone-acceptance-of-0470-build-5209fe7-item-145s-selector-reported-14-october-2026)). Item 145 stays open.
 
 - **The change:** in the active Profile pane only, the range buttons' inline padding is `--space-4` (4 px), in place of the global button rule's 16 px (`src/index.css`). The four-column grid, its spacing, the vertical padding, the minimum sizes, the inset selected ring, the inward focus outline, the labels and the actions are unchanged, as are the shared button rule and the pre-ride selector. The version is `0.4.70`.
 - **Not included:** the refused Screen on control's containment, which clips the rider at 375×667 and stays undecided; the Regular and Larger modes, the root rule and the Settings card; P1, P3, E2, E2+N, a hidden ascent, extra Screen on taps, support-range exceptions and test retirement.
@@ -746,13 +764,13 @@ _Category: Riding presentation_
   - VoiceOver.
 - **Evidence,** outside the repository: `~/acn-review/item-145-selector/`.
 - **CI and deployment, 14 October 2026:** run 38535923412 passed every job: Verify and build 316 s; shards 687, 917, 516 and 824 s; Deploy 13 s. The bounded waiter found the live site serving `0.4.70` / `5209fe7`.
-- **Installed-iPhone acceptance, reported 14 October 2026:** on an iPhone 13 on iOS 26.6.1, with `0.4.70` / `5209fe7` read from Status, every check passed: labels fit, one row, working buttons, no overflow, the switcher visible and no newly introduced scrolling. German was checked under ordinary and enlarged Display Zoom ([dated record](current-status.md#installed-iphone-acceptance-of-0470-build-5209fe7-item-145s-selector-reported-14-october-2026)). VoiceOver, physical Android and 150% Page Zoom are not covered. `677a03e` remains the broad phone-accepted build.
+- **Installed-iPhone acceptance, reported 14 October 2026:** on an iPhone 13 on iOS 26.6.1, with `0.4.70` / `5209fe7` read from Status, every check passed: labels fit, one row, working buttons, no overflow, the switcher visible and no newly introduced scrolling. German was checked under ordinary and enlarged Display Zoom ([dated record](current-status-archive-2.md#installed-iphone-acceptance-of-0470-build-5209fe7-item-145s-selector-reported-14-october-2026)). VoiceOver, physical Android and 150% Page Zoom are not covered. `677a03e` remains the broad phone-accepted build.
 
 <a id="item-145-refused-screen-on-slice"></a>
 
 ### Refused Screen on slice — implemented for `0.4.71` (14 October 2026)
 
-**Approved by the rider on 14 October 2026:** candidate B of the [refused Screen on proposal](../design/route-riding-map-space/refused-screen-on.md), with the wording "Try again" / "Erneut versuchen". It shipped in `0.4.71`, deployed by run 38581636998 as build `72f1084`. **Its ordinary behaviour and presentation passed on the installed iPhone, reported 14 October 2026** ([dated record](current-status.md#installed-iphone-check-of-0471-build-72f1084-item-145s-refused-screen-on-layout-reported-14-october-2026)). The refused state itself has not been observed on the device, and no reliable way to produce one is known, so its native verification stays outstanding. Item 145 stays open.
+**Approved by the rider on 14 October 2026:** candidate B of the [refused Screen on proposal](../design/route-riding-map-space/refused-screen-on.md), with the wording "Try again" / "Erneut versuchen". It shipped in `0.4.71`, deployed by run 38581636998 as build `72f1084`. **Its ordinary behaviour and presentation passed on the installed iPhone, reported 14 October 2026** ([dated record](current-status-archive-2.md#installed-iphone-check-of-0471-build-72f1084-item-145s-refused-screen-on-layout-reported-14-october-2026)). The refused state itself has not been observed on the device, and no reliable way to produce one is known, so its native verification stays outstanding. Item 145 stays open.
 
 - **The change, only while Screen on is refused:**
   - the control's wrapper stops being a box (`display: contents`, selected with `:has()`), so the toggle stays beside the status text;
@@ -804,7 +822,7 @@ _Category: Riding presentation_
 
 ### Short-map slice — implemented for `0.4.72` (15 October 2026)
 
-**Approved by the rider on 15 October 2026**, after a 13 px allowance check and a reassessment with a concise GPX notice, both measured outside the repository and summarised in the proposal's [approved final design](../design/route-riding-map-space/short-map-rider-visibility.md#approved-final-design-15-october-2026). CI run 38746731316 deployed it as `0.4.72` / `7e6246a`. Its stationary functional and layout checks passed on the installed iPhone in English and German, reported 15 October 2026 ([record](current-status.md#installed-iphone-check-of-0472-build-7e6246a-item-145s-short-map-slice-reported-15-october-2026)). VoiceOver was not tested, and a refused Screen on and a failed End were not exercised there, so item 145 and its four rider-visibility cases stay open.
+**Approved by the rider on 15 October 2026**, after a 13 px allowance check and a reassessment with a concise GPX notice, both measured outside the repository and summarised in the proposal's [approved final design](../design/route-riding-map-space/short-map-rider-visibility.md#approved-final-design-15-october-2026). CI run 38746731316 deployed it as `0.4.72` / `7e6246a`. Its stationary functional and layout checks passed on the installed iPhone in English and German, reported 15 October 2026 ([record](current-status-archive-2.md#installed-iphone-check-of-0472-build-7e6246a-item-145s-short-map-slice-reported-15-october-2026)). VoiceOver was not tested, and a refused Screen on and a failed End were not exercised there, so item 145 and its four rider-visibility cases stay open.
 
 - **The change:**
   - **The notice** (`RidingUntrustedGpxNotice.tsx`): one `role="status"` paragraph, "No turn guidance available." / "Keine Abbiegehinweise verfügbar.", from the start of the ride episode, with no timer, control or explanation; `riding.noTurnCues` is removed from both catalogues. Eligibility and manoeuvre trust are unchanged. Its element and text stay the same while it shows; how VoiceOver announces it is unverified.
@@ -828,3 +846,53 @@ _Category: Riding presentation_
 - **CI cost, an estimate:** +9 Chromium and +9 WebKit cases. In the count-based split all nine WebKit cases land in shard 4, which hands four `coldStartPausedRoute` cases (21.6 s in CI) to shard 3; the Chromium cases land in shard 3, and the notice tests' 25 s of waits leave shard 2. Shard 4's summed time rises by about 84 s, about 43 s elapsed if two workers halve it: about 1,031 s from 988 s, about 169 s of headroom, or about 133 s from the recent maximum of 1,024 s. That is near item 146's ~150 s question line, so the question is raised here; heuristic 2 may follow. No CI change is proposed. **The outcome:** in run 38746731316 shard 4 took 1,066 s, 134 s under the limit. The new and moved cases were within about 10 s of the estimate, but the retained cases added 70.5 s summed, a change whose cause is not established ([the 134-second headroom question](history/item-146.md#headroom-question-15-october-2026)).
 - **Not established on the phone:** the refused Screen on and failed End states, which cannot be produced there; the climb cue in those states, or during a ride; and VoiceOver, which was not tested. The stationary checks of 15 October 2026 passed, and their screenshots show the cue's ordinary placements.
 - **Evidence,** outside the repository: `~/acn-review/item-145-shortmap/` and `~/acn-review/item-145-shortmap-impl/`.
+
+<a id="item-145-wrap-under-slice"></a>
+
+### Screen on wrap-under slice — implemented for `0.4.73` (19 October 2026)
+
+**Approved by the rider on 19 October 2026:** V3R, the text-mode proposal's [chosen design](../design/route-riding-map-space/text-modes-proposal.md#chosen-design-v3r-implemented-in-0473-19-october-2026). Screen on comes before the status text in reading order, takes its natural height with reduced vertical padding in place of item 82's stretched button, and the tests verify the new visible layout. CI, deployment and the installed-iPhone check are pending. Item 145 stays open.
+
+- **The change:**
+  - **Markup** (`RidingStatusCard.tsx`, `FreeRoamStatusCard.tsx`, `RidingWakeLockControl.tsx`):
+    - Screen on renders first in the card's main region;
+    - the refusal row renders through `createPortal` into a `.ride-status-card-refusal-slot` after the text, held in state from a callback ref. It renders nothing while the slot is not yet attached, and inline where no slot is given;
+    - the children are positional, so the text column and its `role="status"` nodes keep their identity;
+    - the hook, its states, the wording, `aria-pressed`, the names and the focus styling are unchanged.
+  - **CSS** (`src/index.css`):
+    - the main region is `display: flow-root`, and Screen on floats right with an 8 px left margin;
+    - Screen on's vertical padding is 2.5 px, under the base 44 px minimum;
+    - the text is an ordinary block, its lines `width: fit-content`, spaced 4 px by margins;
+    - route riding's GPS line is `clear: right`, and the slot `clear: both; display: flow-root`, with its row 8 px below;
+    - the refusal row now states `--colour-text-muted` itself, since it no longer inherits it. That is an intentional difference from the prototype, which rendered it #101010;
+    - the `:has()` display-contents rules and the old layout's flex declarations are removed.
+  - **Not changed:** the camera and framing, the map floor, the attribution, the climb cue, the Profile selector, the frozen instruction and every other screen.
+- **Tests:**
+  - **Component:**
+    - `RidingWakeLockControl.test.tsx`: no alert with a `null` slot, then exactly one inside an attached slot;
+    - `RidingStatusCard.test.tsx`: Screen on first in the markup and the first focusable element; one alert in the slot after the text, with focus kept on Screen on and recovery removing it; the text and live regions keeping their identity as Screen on comes and goes;
+    - `FreeRoamStatusCard.test.tsx`: the order and the slot.
+  - **Browser, in Chromium and WebKit:**
+    - `ridingRefusedScreenOn.smoke.spec.ts`: the refused layout's former wrapper-box check, `toggle.left >= textColumn.right`, is replaced by visible-text geometry from per-line `Range` rectangles: Screen on at main's top right, the status row beside it, and no line intersecting it. Every other assertion is kept, including recovery compared after the map is ready and its imagery settled. Four new cases at 390×844, route riding and free roam in English and German, check Screen on off and on: compact at the top right, at least 44 × 44 px and no taller than its content allows; the route GPS line beneath and free roam's detail beside; no dead space, by layout boxes; and the geometry unchanged after each activation.
+    - `ridingVisibleMapFraming.smoke.spec.ts`: two new cases at Regular 320×693, in English and German. A ±25 m fix, a location error and the app's own minute-old text, then a failed End: the GPS line on one line beneath Screen on, the rider whole and painted, and the map controls absent by policy. A measurement-only 48 px Screen on keeps the line beneath, the card growing only by the extra height. Screen on and the location Try again are then activated. The age comes from an opt-in `watchPosition` wrapper that stamps each position with the page's `Date.now`, and a `Date.now` offset, leaving `performance.now`, timers and frames real.
+  - **Browser, in Chromium only:** `ridingWakeLock.spec.ts`'s item 82 test now asserts a natural height (at least 44 px, the label and state inside, no taller than its content, padding and border), the status and remaining lines left of the button, and the GPS line beside or beneath it, never overlapping.
+- **Measured locally in the CI image,** browser evidence only:
+  - **Against V3R,** with its probe on the production build: 52 of 52 snapshots equal in the card, the map, Screen on's box, every line's text and position, and the rider's projection.
+  - **The changed specs** pass in Chromium and WebKit, and so do the protected neighbours: 233 Chromium, 18 `android-chrome` and 111 WebKit cases.
+  - **Negative controls,** each failing at the intended assertion:
+    - without `clear: right`, the 48 px stress puts the GPS line on two lines, in both engines and languages;
+    - without the contained slot, WebKit's recovered card differs, while Chromium passes, as expected;
+    - with 8 px padding, all 8 compact cases fail at the natural-height check, and the framing cases stop at the stress precondition, before the rider check. V3's 55 px button had left the German rider 12% visible.
+  - **Component tests:** 5,112 in 214 files. Lint, the type check and the build pass.
+- **CI cost under Candidate B, an estimate:**
+  - **The cases:** +7 Chromium, one of them renaming a removed case, and +6 WebKit; `ridingWakeLock` stays Chromium coverage. With the workflow's own commands, the chromium and `android-chrome` run grows from 895 to 901 cases, and the `webkit-smoke` run from 337 to 343.
+  - **Where they land:** every new case is in shard 3 (Chromium) or shard 4 (WebKit), and earlier cases move between shards. At CI speed the new cases sum to about 28 s in Chromium and 36 s in WebKit.
+  - **The jobs:** job 3, the heaviest at 913 s in run 38788904342, gains about 19 s elapsed, giving about 932 s and 268 s of headroom. In job 4 the six new WebKit cases, about 36 s, replace five moved out, 41.7 s.
+  - **Item 146:** no heuristic is expected to fire, and the ~150 s question line is not reached. No CI change.
+- **Remaining findings, kept separate:**
+  - 3 px of German map headroom, in the CI fonts;
+  - 200% root text, which remains blocking regression coverage while the support ranges are undecided: some failed-End combinations still hide the rider or clip Zoom out and Follow;
+  - the paused-Follow toast covering Follow at 200%;
+  - WebKit's emulated position timestamps, a Playwright observation rather than an iPhone defect.
+- **Not established:** the iPhone's fonts, and with them the 44 px button and the German headroom there; native Display Zoom; the refused Screen on, location-error and failed-End states on the phone, which are not to be manufactured; and physical Android. VoiceOver is not requested.
+- **Evidence,** outside the repository: `~/acn-review/item-145-v3r-ship/`, with the prototypes in `~/acn-review/item-145-textmodes-refresh/v3-wrap-under/`.

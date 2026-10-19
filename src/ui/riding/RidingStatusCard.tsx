@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { ParameterlessMessageKey, Translator } from "../../i18n/translate.ts";
 import type { OffRouteLevel } from "../../navigation/types.ts";
@@ -90,11 +91,12 @@ function buildRemainingAriaLabel(
 
 /**
  * The compact active-Riding status card (backlog item 75): one bordered
- * box holding a two-column main region — a left text column (the
- * route/GPS status line, remaining distance/ascent, GPS
- * accuracy/staleness and a compact connectivity indicator, backlog item
- * 83) beside the wake-lock control on the right (item 82 follow-up,
- * 2026-08-26) — followed by a full-width compact geolocation-error row
+ * box holding a main region — the wake-lock control at its top right at
+ * its natural height, with the text (the route/GPS status line, remaining
+ * distance/ascent, GPS accuracy/staleness and a compact connectivity
+ * indicator, backlog item 83) flowing beside and beneath it, the GPS line
+ * always beneath it (item 145, replacing item 82's two columns) — followed
+ * by a full-width compact geolocation-error row
  * with an inline retry, and (item 83) a full-width compact map-imagery
  * recovery row with its own inline retry, relocated out of MapView's own
  * in-map overlay. Receives only already-derived presentation values; it
@@ -121,6 +123,9 @@ export function RidingStatusCard({
 }: RidingStatusCardProps) {
   const translator = useTranslate();
   const { t } = translator;
+  // Backlog item 145: the slot after the text that Screen on's refusal row
+  // renders into (RidingWakeLockControl's failureRowContainer).
+  const [refusalSlot, setRefusalSlot] = useState<HTMLDivElement | null>(null);
   const topLabel = liveStatus
     ? t(OFF_ROUTE_LABEL_KEYS[liveStatus.offRouteLevel])
     : geolocationErrorMessage
@@ -138,6 +143,14 @@ export function RidingStatusCard({
   return (
     <div className="ride-status-card">
       <div className="ride-status-card-main">
+        {/* Backlog item 145: Screen on comes first so it can float at the
+         * main region's top right, the text flowing beside and beneath it;
+         * its refusal row renders into the slot after the text. These
+         * children are positional, so the text keeps its identity (and its
+         * live regions) whether or not the control is shown. */}
+        {wakeLock ? (
+          <RidingWakeLockControl {...wakeLock} failureRowContainer={refusalSlot} />
+        ) : null}
         <div className="ride-status-card-text">
           <div className="ride-status-card-status-row">
             <span
@@ -172,7 +185,9 @@ export function RidingStatusCard({
             </span>
           ) : null}
         </div>
-        {wakeLock ? <RidingWakeLockControl {...wakeLock} /> : null}
+        {wakeLock ? (
+          <div className="ride-status-card-refusal-slot" ref={setRefusalSlot} />
+        ) : null}
       </div>
       {geolocationErrorMessage ? (
         <div role="alert" className="ride-status-card-error-row">

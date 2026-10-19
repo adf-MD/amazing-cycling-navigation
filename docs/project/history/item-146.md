@@ -377,4 +377,28 @@ A fifth shard and the consolidation pilot remain the alternatives if four-shard 
   - the committed step matches the probed one;
   - actionlint 1.7.7 reports nothing; shellcheck was not available.
 
-**Status:** implemented; CI confirmation was pending at commit time. The tests, timeouts, retries, Playwright configuration and shard count are unchanged. The evidence is in `~/acn-review/item-146-rebalance/`.
+**Status:** implemented, and confirmed by its first CI run (below). The tests, timeouts, retries, Playwright configuration and shard count are unchanged. The evidence is in `~/acn-review/item-146-rebalance/`.
+
+<a id="ci-confirmation-run-38788904342-16-october-2026"></a>
+
+### CI confirmation: run 38788904342, 16 October 2026
+
+**The run.** Run 38788904342, for `669143d`, passed every job: Verify and build 302 s; the four shard jobs 662, 687, 913 and 653 s, with test steps of 605, 631, 853 and 595 s and 56–60 s outside them; Deploy 12 s. The live site served `0.4.72` / `669143d`. The longest job left 287 s, and no heuristic fired: the last three longest shard jobs were 988, 1,066 and 913 s.
+
+**The reports.** The rider's reviewer supplied the four timing artefacts, the eight reports and the job metadata as one archive, kept outside the repository.
+
+- **The reviewer found:** each artefact holds both reports; the eight cover the 1,232 cases exactly once, 849 Chromium, 46 Android-emulated Chromium and 337 WebKit; 1,227 passed, with the same five WebKit skips and no retries; and the inventory and statuses match run 38746731316.
+- **A separate inspection of the archive** checked every file against its SHA-256, each artefact zip against GitHub's digest and its name and ID against the listing saved when the run finished, and reproduced those counts and comparisons. Its copies of run 38746731316's reports are re-serialised: equal in content to the original artefacts, not byte-identical.
+
+**Per run within each job,** summed test seconds and Playwright's reported phase:
+
+| Job | Chromium and Android: cases, summed → phase | WebKit: cases, summed → phase |
+| --- | ------------------------------------------- | ----------------------------- |
+| 1   | 224, 816 → 415 s                            | 85, 369 → 190 s               |
+| 2   | 224, 742 → 378 s                            | 84, 447 → 252 s               |
+| 3   | 224, 1,137 → 577 s                          | 84, 538 → 274 s               |
+| 4   | 223 (177 + 46), 660 → 339 s                 | 84, 498 → 254 s               |
+
+- **Halving held** in seven of the eight runs, summed ÷ phase 1.95–1.97. Job 2's WebKit run, 1.77, ended 28 s after its busier worker, against 3–9 s in the others; the reports do not establish why.
+- **Against the estimates:** job 3, the heaviest, sits inside the 865–935 s estimated for B's heaviest job, and job 4 inside its own range. Jobs 1 and 2 came in about 100 s below the low ends of theirs (761 and 795 s), and the run 2 estimate had named job 1 the heaviest. That fits execution speed varying between jobs and runs, as before.
+- **One run** confirms this outcome, not a lasting runtime. Monitoring continues under the heuristics of the [conclusion](#conclusion-8-october-2026).

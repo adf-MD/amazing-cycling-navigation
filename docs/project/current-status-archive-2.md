@@ -1,10 +1,92 @@
-# Current status — archive, second volume: dated records from 12 October 2026
+# Current status — archive, second volume: dated records from 12 to 16 October 2026
 
-This file is **a continuation of [`current-status.md`](current-status.md)'s dated acceptance record**, between it and [`current-status-archive.md`](current-status-archive.md). That first archive holds the records from 7 October back to 10 September 2026 and is full, so the 12 October 2026 record moved here, unchanged and in the same order, on 15 October 2026 — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, and is the only place new evidence is recorded. Read the dated record newest first: `current-status.md`, then this file, then `current-status-archive.md`.
+This file is **a continuation of [`current-status.md`](current-status.md)'s dated acceptance record**, between it and [`current-status-archive.md`](current-status-archive.md). That first archive holds the records from 7 October back to 10 September 2026 and is full, so the 12 October 2026 record moved here, unchanged and in the same order, on 15 October 2026, the 15 October record and the two 14 October 2026 records on 16 October 2026, and the 16 October 2026 record on 19 October 2026 — only because `current-status.md` was nearing the size at which it can no longer be loaded whole. It is the same single ledger, not a parallel record: `current-status.md` stays the only entry point, holds the open installed-iPhone checklist, and is the only place new evidence is recorded. Read the dated record newest first: `current-status.md`, then this file, then `current-status-archive.md`.
 
-Links in the moved record are relative to `docs/project/`, as they were, and still resolve. Records moved here later go above the older ones, keeping that order.
+Links in the moved records are relative to `docs/project/`, as they were, and still resolve, and a "Session" named in them is a session of `current-status.md`'s checklist. Records moved here later go above the older ones, keeping that order.
 
 ---
+
+### Installed-iPhone VoiceOver check of the concise GPX notice (`0.4.72`, build `669143d`, reported 16 October 2026)
+
+**Device and build.** An iPhone 13 on iOS 26.6.1, the installed Home Screen PWA, with `0.4.72` / `669143d` confirmed as the current version and build. `669143d` changed CI and documentation only, so its application is `7e6246a`'s.
+
+**What the rider reported** of the concise GPX notice, "No turn guidance available." / "Keine Abbiegehinweise verfügbar." (items 97 and 145), with VoiceOver on:
+
+- it is announced once;
+- it is completely readable when selected;
+- it produces no unwanted repetition;
+- it causes no unexpected focus movement.
+
+**What this accepts:** the notice's checked VoiceOver behaviour on `0.4.72` / `669143d`, in that device context. The language used was not reported, so no language matrix is inferred, and nothing here accepts screen-reader behaviour of the rest of the riding screen or of the app. The visual and functional checks reported on 15 October 2026 stay accepted, and no repeat phone check is needed.
+
+**Unchanged by it:** item 145 and its four rider-visibility cases stay open, and `677a03e` remains the broad phone-accepted build. Further manual VoiceOver checks are not requested ([how to read this ledger](current-status.md#how-to-read-this-ledger)).
+
+### Installed-iPhone check of `0.4.72` (build `7e6246a`, item 145's short-map slice, reported 15 October 2026)
+
+**Device and build.** An iPhone 13 on iOS 26.6.1, the installed Home Screen PWA, on `0.4.72` / `7e6246a`, in English and German, stationary.
+
+**Every requested check passed** ([slice](backlog.md#item-145-short-map-slice)):
+
+- the concise GPX notice;
+- ordinary route riding and free roam, under standard and enlarged Display Zoom;
+- Map/Profile switching and the selector's fit;
+- the attribution, the map controls and Screen on;
+- pan, North-up and zoom.
+
+**Two observations, recorded as explained behaviour:**
+
+- **In German, the climb cue rises slightly when `Folgemodus pausiert.` appears.** That is consistent with the space already reserved above the paused-Follow toast.
+- **Under enlarged Display Zoom, the English status card wraps `Screen on` below its text.**
+  - That leaves a shorter map, so the cue takes its upper placement.
+  - German keeps enough map height for the lower right.
+  - The status card and its wrapping rules were unchanged by this release.
+
+**The climb cue.** The screenshots are positive native evidence for the cue states they show. They are not acceptance of its behaviour in failure states, or a full riding field check; Session 2 keeps its ride checks.
+
+**Not verified:**
+
+- VoiceOver, which was not tested;
+- a refused Screen on and a failed End, which were not exercised. Item 145 and its four rider-visibility cases stay open.
+
+**Unchanged by it:** the selector's acceptance stays with `0.4.70` / `5209fe7`, and `677a03e` remains the broad phone-accepted build.
+
+### Installed-iPhone check of `0.4.71` (build `72f1084`, item 145's refused Screen on layout, reported 14 October 2026)
+
+**Device and build.** An iPhone 13 on iOS 26.6.1, with `0.4.71` / `72f1084` confirmed as the current version and build, in German.
+
+**Every requested check passed:**
+
+- `Display an` off and on, with the familiar status card;
+- the remaining ascent, `Karte` / `Profil` switching and the accepted selector;
+- the ordinary presentation under enlarged Display Zoom.
+
+**What this verifies:** the ordinary behaviour and presentation around candidate B ([record](backlog.md#item-145-refused-screen-on-slice)).
+
+**What it does not verify:** physical acceptance of the refused state itself. No refusal has been observed on that device, and no reliable way to produce one through its ordinary interface is established, so the refused state's native verification stays outstanding.
+
+**Unchanged by it:**
+
+- the selector's acceptance stays with `0.4.70` / `5209fe7`;
+- `677a03e` remains the broad phone-accepted build;
+- item 145's four rider-visibility cases stay unresolved and unaccepted.
+
+### Installed-iPhone acceptance of `0.4.70` (build `5209fe7`, item 145's selector, reported 14 October 2026)
+
+**Device and build.** An iPhone 13 on iOS 26.6.1, the installed Home Screen PWA, with version `0.4.70` and build `5209fe7` read from Status.
+
+**What was accepted:** item 145's narrow correction to the active Profile selector ([record](backlog.md#item-145-selector-slice)), its 4 px inline padding. Every requested check passed:
+
+- the labels fit inside their buttons, in one row;
+- every button works;
+- nothing scrolls sideways;
+- the Map/Profile switcher stays visible;
+- no newly introduced scrolling.
+
+The German selector was checked under both ordinary and enlarged Display Zoom.
+
+**Not inferred from it:** VoiceOver, physical Android, 150% Page Zoom, or any layout other than this selector's. **Item 145 stays open.** `677a03e` remains the broad phone-accepted build, with `5209fe7` accepted for this selector only.
+
+**A design observation, not a regression.** With screenshots, the rider asked about apparently increased vertical spacing. `5209fe7` changed only the selector buttons' inline padding, and the screenshots are consistent with Display Zoom magnifying the existing spacing. It is recorded as an observation for design review, not as a confirmed defect or a request to compact the interface.
 
 ### Installed-iPhone observations of text-enlargement mechanisms (item 145, reported 12 October 2026)
 

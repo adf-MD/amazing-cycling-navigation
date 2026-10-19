@@ -8,7 +8,10 @@ import { readActiveRideStateRow } from "./support/rideStateDb.ts";
 // beside the status text and the refusal's message and retry ("Try again" /
 // "Erneut versuchen") take their own full-width row of the status card.
 // Before, they sat inside the toggle's column, widened it past the card and
-// left the retry partly off screen.
+// left the retry partly off screen. Since 0.4.73 (item 145's wrap-under
+// slice) Screen on floats at the top right of the card's main region at its
+// natural height, the status text flowing beside and beneath it, and the
+// refusal row renders into a contained slot after the text.
 //
 // This file runs under the "chromium" and "webkit-smoke" projects, in English
 // and German at ordinary root text, at 390x844, 375x667 and 320x693 with
@@ -16,20 +19,29 @@ import { readActiveRideStateRow } from "./support/rideStateDb.ts";
 // after a failed End ride) and in free roam (375x667, German). It checks:
 // - the retry's whole box and label visible, at least 44x44, beside the
 //   message; an ordinary click reaches it with no scrolling and retries;
-// - Screen on beside the status text, whole and operable; the remaining
+// - Screen on at the main region's top right, beside the status row, whole
+//   and operable, with no line of text overlapping it (visible text, not the
+//   text wrapper's box, which extends beneath the float); the remaining
 //   ascent whole; no page overflow; the Map/Profile switcher and the accepted
 //   single-row Profile selector unaffected;
 // - after a successful retry, the card is box for box the ordinary
-//   successful Screen on state, with the failed End's error kept when present.
+//   successful Screen on state, with the failed End's error kept when present
+//   (the free-roam case at 375x667 is the one WebKit kept 4 px taller before
+//   the slot was contained);
+// - at 390x844, route riding and free roam, English and German: the compact
+//   control itself, at least 44x44 and no taller than its content needs, its
+//   label and state inside it, lines beside it 8 px clear, route riding's GPS
+//   line beneath it and free roam's detail line beside it, and the main
+//   region exactly as tall as its content.
 // Every snapshot is attached before its assertions or any click, with the
 // map's imagery state; compared snapshots are taken only after the map's own
 // full load, with no imagery row in the card (CI run 38567715515: a
 // delayed-imagery row present in the reference but not in the recovery
 // changed the card's height).
 //
-// Why a browser: the layout depends on :has(), display: contents and flex
-// wrapping with real text metrics, and the retry's reachability on real hit
-// testing. Overlap: ridingWakeLock.spec.ts covers the ordinary card layout in
+// Why a browser: the layout depends on a float, clearance, flow-root and line
+// wrapping with real text metrics, on WebKit's own layout invalidation, and
+// the retry's reachability on real hit testing. Overlap: ridingWakeLock.spec.ts covers the ordinary card layout in
 // Chromium only; androidRiding.spec.ts only the refusal's presence;
 // RidingWakeLockControl.test.tsx the lifecycle. Not asserted here: the rider's
 // visibility in short maps, where item 145 keeps four cases open, and the map
@@ -100,7 +112,19 @@ interface Snapshot {
   page: { scrollWidth: number; scrollHeight: number };
   header: Rect | null;
   card: Rect | null;
+  /** The card's main region: Screen on and the text flowing around it. */
+  main: Rect | null;
+  /** The text's visible extent (its text rects), not its wrapper's box. */
   textColumn: Rect | null;
+  /** The text wrapper's own layout box. */
+  textBox: Rect | null;
+  /** Each fragment of visible text in the text column, line by line. */
+  textLines: Rect[];
+  statusRowText: Rect | null;
+  /** Route riding's GPS line or free roam's detail line: its text and lines. */
+  gpsLine: { text: Rect; lines: number } | null;
+  /** Screen on's label and state text. */
+  toggleContent: Rect | null;
   toggle: (Rect & { visible: number; hit: boolean; pressed: string | null }) | null;
   statusLine: (Rect & { visible: number }) | null;
   message: { text: Rect; visibleText: boolean } | null;
@@ -358,6 +382,11 @@ async function snapshot(
       card?.querySelector(".ride-status-card-remaining, .ride-status-card-detail") ??
       null;
     const row = card?.querySelector(".wake-lock-failure-row") ?? null;
+    const text = card?.querySelector(".ride-status-card-text") ?? null;
+    const statusRow = card?.querySelector(".ride-status-card-status-row") ?? null;
+    const gps =
+      card?.querySelector(".ride-status-card-gps, .ride-status-card-detail") ?? null;
+    const gpsText = gps ? textRect(gps) : null;
     const message = row?.querySelector("p") ?? null;
     const retry = row?.querySelector("button") ?? null;
     const messageText = message ? textRect(message) : null;
@@ -370,7 +399,40 @@ async function snapshot(
       },
       header: rect(document.querySelector("header.riding-immersive-header")),
       card: rect(card),
-      textColumn: rect(card?.querySelector(".ride-status-card-text")),
+      main: rect(card?.querySelector(".ride-status-card-main")),
+      textColumn: text ? textRect(text) : null,
+      textBox: rect(text),
+      textLines: text
+        ? (() => {
+            const range = document.createRange();
+            range.selectNodeContents(text);
+            return [...range.getClientRects()]
+              .filter((r) => r.width > 0)
+              .map((r) => ({
+                left: r.left,
+                right: r.right,
+                top: r.top,
+                bottom: r.bottom,
+              }));
+          })()
+        : [],
+      statusRowText: statusRow ? textRect(statusRow) : null,
+      gpsLine:
+        gps && gpsText
+          ? {
+              text: gpsText,
+              lines: (() => {
+                const range = document.createRange();
+                range.selectNodeContents(gps);
+                return new Set(
+                  [...range.getClientRects()]
+                    .filter((r) => r.width > 0)
+                    .map((r) => Math.round(r.top)),
+                ).size;
+              })(),
+            }
+          : null,
+      toggleContent: toggle ? textRect(toggle) : null,
       toggle: toggle
         ? {
             ...box(toggle),
@@ -435,10 +497,9 @@ function expectRefusedLayout(snap: Snapshot, copy: Copy, mode: "route" | "free")
   expect(retry.top).toBeLessThan(message.text.bottom);
   expect(retry.bottom).toBeGreaterThan(message.text.top);
 
-  // Screen on stays beside the status text, whole, pressed and operable.
-  expect(toggle.left).toBeGreaterThanOrEqual(textColumn.right - TOLERANCE_PX);
-  expect(toggle.top).toBeLessThan(textColumn.bottom);
-  expect(toggle.bottom).toBeGreaterThan(textColumn.top);
+  // Screen on stays at the top right, beside the status, whole, pressed and
+  // operable; the text may continue beneath it but never overlaps it.
+  expectScreenOnPlacement(snap, "refused");
   expect(toggle.visible).toBeGreaterThanOrEqual(0.999);
   expect(toggle.hit).toBe(true);
   expect(toggle.right - toggle.left).toBeGreaterThanOrEqual(TOUCH_TARGET_PX);
@@ -457,6 +518,107 @@ function expectRefusedLayout(snap: Snapshot, copy: Copy, mode: "route" | "free")
   expect(snap.alerts).toContain(copy.refused + copy.retry);
 }
 
+/** Item 145: Screen on at the main region's top right, beside the status
+ * row; the status text may continue beneath it, but no fragment of visible
+ * text overlaps it. Visible text, not the text wrapper's box, which extends
+ * beneath the float. */
+function expectScreenOnPlacement(snap: Snapshot, what: string): void {
+  const { toggle, main, statusRowText, textLines } = snap;
+  if (!toggle || !main || !statusRowText) {
+    throw new Error(`${what}: expected Screen on, the main region and the status row`);
+  }
+  expect(
+    Math.abs(toggle.top - main.top),
+    `${what}: Screen on at the top`,
+  ).toBeLessThanOrEqual(TOLERANCE_PX);
+  expect(
+    Math.abs(toggle.right - main.right),
+    `${what}: Screen on at the right`,
+  ).toBeLessThanOrEqual(TOLERANCE_PX);
+  expect(
+    statusRowText.right,
+    `${what}: the status row beside Screen on`,
+  ).toBeLessThanOrEqual(toggle.left + TOLERANCE_PX);
+  expect(statusRowText.top).toBeLessThan(toggle.bottom);
+  expect(textLines.length, `${what}: visible text`).toBeGreaterThan(0);
+  for (const line of textLines) {
+    const overlaps =
+      line.right > toggle.left + TOLERANCE_PX &&
+      line.left < toggle.right - TOLERANCE_PX &&
+      line.bottom > toggle.top + TOLERANCE_PX &&
+      line.top < toggle.bottom - TOLERANCE_PX;
+    expect(overlaps, `${what}: text ${JSON.stringify(line)} clear of Screen on`).toBe(
+      false,
+    );
+  }
+}
+
+/** Item 145, replacing item 82's stretched button: the compact control at
+ * its natural height, with the text beside it 8 px clear and route riding's
+ * GPS line beneath it; free roam's detail line stays beside it. The main
+ * region's layout box is exactly as tall as the text's box or the control,
+ * whichever is taller: no dead space. */
+function expectCompactControl(
+  snap: Snapshot,
+  mode: "route" | "free",
+  what: string,
+): void {
+  expectScreenOnPlacement(snap, what);
+  const { toggle, toggleContent, main, textBox, gpsLine, textLines } = snap;
+  if (!toggle || !toggleContent || !main || !textBox || !gpsLine) {
+    throw new Error(
+      `${what}: expected Screen on, its text, the text box and the GPS line`,
+    );
+  }
+  expect(toggle.right - toggle.left).toBeGreaterThanOrEqual(TOUCH_TARGET_PX);
+  expect(toggle.bottom - toggle.top).toBeGreaterThanOrEqual(TOUCH_TARGET_PX - 0.01);
+  for (const side of ["left", "top"] as const) {
+    expect(
+      toggleContent[side],
+      `${what}: label and state inside Screen on`,
+    ).toBeGreaterThanOrEqual(toggle[side]);
+  }
+  for (const side of ["right", "bottom"] as const) {
+    expect(
+      toggleContent[side],
+      `${what}: label and state inside Screen on`,
+    ).toBeLessThanOrEqual(toggle[side]);
+  }
+  // Natural height: the 44 px minimum, or its two lines with 2.5 px of
+  // vertical padding and the 1 px borders, never stretched beyond that.
+  const natural = Math.max(
+    TOUCH_TARGET_PX,
+    toggleContent.bottom - toggleContent.top + 2 * 2.5 + 2,
+  );
+  expect(
+    toggle.bottom - toggle.top,
+    `${what}: Screen on at its natural height`,
+  ).toBeLessThanOrEqual(natural + 1);
+  for (const line of textLines) {
+    if (line.bottom <= toggle.top || line.top >= toggle.bottom) continue;
+    expect(
+      toggle.left - line.right,
+      `${what}: text beside Screen on 8 px clear`,
+    ).toBeGreaterThanOrEqual(8 - TOLERANCE_PX);
+  }
+  if (mode === "route") {
+    expect(
+      gpsLine.text.top,
+      `${what}: the GPS line beneath Screen on`,
+    ).toBeGreaterThanOrEqual(toggle.bottom - TOLERANCE_PX);
+  } else {
+    expect(
+      gpsLine.text.top,
+      `${what}: free roam's detail line beside Screen on`,
+    ).toBeLessThan(toggle.bottom);
+  }
+  expect(gpsLine.lines, `${what}: the GPS line on one line`).toBe(1);
+  expect(
+    Math.abs(main.bottom - Math.max(textBox.bottom, toggle.bottom)),
+    `${what}: no dead space in the main region`,
+  ).toBeLessThanOrEqual(TOLERANCE_PX);
+}
+
 /** The ordinary card's boxes in two equivalent states must match. */
 function expectSameCard(a: Snapshot, b: Snapshot, what: string): void {
   // The card also hosts the map's imagery rows (item 108), so both states
@@ -469,6 +631,7 @@ function expectSameCard(a: Snapshot, b: Snapshot, what: string): void {
   const boxes = (s: Snapshot) => ({
     header: s.header,
     card: s.card,
+    main: s.main,
     textColumn: s.textColumn,
     toggle: s.toggle && {
       left: s.toggle.left,
@@ -736,4 +899,51 @@ test.describe("375x667 free roam", () => {
     await refreshAndSettle(page, context);
     expectSameCard(on, await snapshot(page, testInfo, "recovered"), "recovered");
   });
+});
+
+test.describe("390x844: the compact Screen on control (item 145)", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  for (const mode of ["route", "free"] as const) {
+    for (const language of LANGUAGES) {
+      test(`${language}, ${mode}: Screen on sits compact at the card's top right, off and on, and works`, async ({
+        page,
+        context,
+      }, testInfo) => {
+        test.setTimeout(90_000);
+        const copy = COPY[language];
+        await startRide(page, context, SIZES[0], language, mode);
+        await refreshAndSettle(page, context);
+        const off = await snapshot(page, testInfo, "off");
+        expectCompactControl(off, mode, "off");
+        expect(off.toggle?.pressed).toBe("false");
+        expect(off.page.scrollWidth).toBeLessThanOrEqual(off.viewport.width);
+        expect(off.page.scrollHeight).toBeLessThanOrEqual(off.viewport.height);
+        // Free roam has no route, so no Map/Profile switcher.
+        if (mode === "route") expect(off.switcher).not.toBeNull();
+
+        // Activated, the pressed treatment changes no geometry.
+        await turnScreenOn(page, copy);
+        await refreshAndSettle(page, context);
+        const on = await snapshot(page, testInfo, "on");
+        expectCompactControl(on, mode, "on");
+        expect(on.imagery, "the reference's imagery state").toEqual({
+          mapReady: "true",
+          rows: [],
+        });
+        expect(off.imagery).toEqual(on.imagery);
+        for (const key of ["card", "main", "textColumn"] as const) {
+          const x = off[key];
+          const y = on[key];
+          if (!x || !y) throw new Error(`expected ${key} in both states`);
+          for (const side of ["left", "right", "top", "bottom"] as const) {
+            expect(Math.abs(x[side] - y[side]), `on: ${key}.${side}`).toBeLessThanOrEqual(
+              TOLERANCE_PX,
+            );
+          }
+        }
+        await turnScreenOff(page, copy);
+      });
+    }
+  }
 });

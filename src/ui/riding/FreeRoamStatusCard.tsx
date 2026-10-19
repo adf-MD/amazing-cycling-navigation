@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslate } from "../../i18n/useTranslate.ts";
 import type { Translator } from "../../i18n/translate.ts";
 import type { MapImageryRecoveryStatus } from "../../map/MapView.tsx";
@@ -56,11 +57,12 @@ function freeRoamTrackingLabel(
  * Free roam's counterpart to RidingStatusCard.tsx — deliberately not a
  * reuse of that component, since its off-route/remaining-distance/ascent
  * props are fundamentally route-shaped and meaningless without a route.
- * Same two-column main region (item 82 follow-up, 2026-08-26), wake-lock
- * slot, compact connectivity indicator and full-width error/imagery-
- * recovery rows (item 83), but the text column's status label is a plain
- * tracking-state word instead of an off-route status, and there is no
- * remaining-distance/ascent row.
+ * Same main region (Screen on at its top right, the text flowing beside
+ * and beneath it, item 145), refusal slot, compact connectivity indicator
+ * and full-width error/imagery-recovery rows (item 83), but the text
+ * column's status label is a plain tracking-state word instead of an
+ * off-route status, there is no remaining-distance/ascent row, and its
+ * GPS detail line is not held beneath Screen on.
  */
 export function FreeRoamStatusCard({
   liveStatus,
@@ -73,6 +75,9 @@ export function FreeRoamStatusCard({
 }: FreeRoamStatusCardProps) {
   const translator = useTranslate();
   const { t } = translator;
+  // Backlog item 145: the slot after the text that Screen on's refusal row
+  // renders into (RidingWakeLockControl's failureRowContainer).
+  const [refusalSlot, setRefusalSlot] = useState<HTMLDivElement | null>(null);
   const topLabel = freeRoamTrackingLabel(
     translator,
     liveStatus,
@@ -89,6 +94,14 @@ export function FreeRoamStatusCard({
   return (
     <div className="ride-status-card">
       <div className="ride-status-card-main">
+        {/* Backlog item 145: Screen on comes first so it can float at the
+         * main region's top right, the text flowing beside and beneath it;
+         * its refusal row renders into the slot after the text. These
+         * children are positional, so the text keeps its identity (and its
+         * live regions) whether or not the control is shown. */}
+        {wakeLock ? (
+          <RidingWakeLockControl {...wakeLock} failureRowContainer={refusalSlot} />
+        ) : null}
         <div className="ride-status-card-text">
           <div className="ride-status-card-status-row">
             <span role="status" className="ride-status-card-status">
@@ -105,7 +118,9 @@ export function FreeRoamStatusCard({
             </span>
           ) : null}
         </div>
-        {wakeLock ? <RidingWakeLockControl {...wakeLock} /> : null}
+        {wakeLock ? (
+          <div className="ride-status-card-refusal-slot" ref={setRefusalSlot} />
+        ) : null}
       </div>
       {geolocationErrorMessage ? (
         <div role="alert" className="ride-status-card-error-row">

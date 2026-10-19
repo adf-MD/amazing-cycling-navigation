@@ -2487,11 +2487,11 @@ export function RidingScreen({
       ) : null}
 
       {/* The single compact status card (backlog item 75, superseding item
-       * 68's still-separate wake-lock/status-strip siblings): a two-column
-       * main region (item 82 follow-up, 2026-08-26) — a left text column
-       * (route/GPS status, remaining distance/ascent, GPS freshness and a
-       * compact connectivity indicator, backlog item 83) beside the
-       * wake-lock control on the right — followed by a full-width compact
+       * 68's still-separate wake-lock/status-strip siblings): a main region
+       * with the wake-lock control at its top right and the text (route/GPS
+       * status, remaining distance/ascent, GPS freshness and a compact
+       * connectivity indicator, backlog item 83) flowing beside and beneath
+       * it (item 145) — followed by a full-width compact
        * geolocation-error row with its own inline retry, and (item 83) a
        * full-width compact map-imagery recovery row relocated out of
        * MapView's own in-map overlay — all inside one bordered card, never

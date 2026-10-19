@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { buildFakeWakeLockSource } from "../../test/fixtures/wakeLockSource.ts";
 import { RidingStatusCard, type RidingLiveStatus } from "./RidingStatusCard.tsx";
 
@@ -690,5 +691,102 @@ describe("RidingStatusCard: the transient delayed imagery row (backlog item 108)
       />,
     );
     expect(document.querySelector(".ride-status-card-imagery-row")).toBeNull();
+  });
+});
+
+describe("RidingStatusCard: Screen on before the text, its refusal row after it (backlog item 145)", () => {
+  const fixedClock = { now: () => 1_000 };
+  function renderCard(withWakeLock: boolean, fake = buildFakeWakeLockSource()) {
+    const element = (wake: boolean) => (
+      <RidingStatusCard
+        liveStatus={buildLiveStatus()}
+        geolocationErrorMessage={null}
+        onRetryGeolocation={noop}
+        online={true}
+        imageryRecoveryStatus={null}
+        onRetryImagery={noop}
+        wakeLock={
+          wake
+            ? {
+                desired: true,
+                onToggleDesired: vi.fn(),
+                wakeLockSource: fake.source,
+                clock: fixedClock,
+              }
+            : undefined
+        }
+      />
+    );
+    const view = render(element(withWakeLock));
+    return {
+      ...view,
+      fake,
+      show: (wake: boolean) => {
+        view.rerender(element(wake));
+      },
+    };
+  }
+
+  it("renders Screen on first in reading order, as the card's first focusable element", () => {
+    renderCard(true);
+    const button = screen.getByRole("button", { name: "Screen on" });
+    const card = button.closest(".ride-status-card");
+    const text = card?.querySelector(".ride-status-card-text");
+    expect(text).not.toBeNull();
+    expect(
+      button.compareDocumentPosition(text ?? button) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(card?.querySelector("button, a[href], input, [tabindex]")).toBe(button);
+  });
+
+  it("shows a refusal as exactly one alert in the slot after the text, keeps focus on Screen on, and removes it on recovery", async () => {
+    const user = userEvent.setup();
+    const { fake } = renderCard(true);
+    const button = screen.getByRole("button", { name: "Screen on" });
+    button.focus();
+
+    await act(async () => {
+      fake.instances[0]?.rejectRequest(new Error("denied"));
+      await Promise.resolve();
+    });
+
+    const alerts = screen.getAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    const alert = alerts[0];
+    expect(alert).toHaveTextContent("The screen could not be kept awake.");
+    expect(alert?.closest(".ride-status-card-refusal-slot")).not.toBeNull();
+    const text = document.querySelector(".ride-status-card-text");
+    expect(
+      (text?.compareDocumentPosition(alert ?? document.body) ?? 0) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(button);
+
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await act(async () => {
+      fake.instances[1]?.resolveRequest();
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("Screen staying awake.")).toBeInTheDocument();
+  });
+
+  it("keeps the text and its live regions as the same nodes while Screen on is removed and shown again", () => {
+    const { show } = renderCard(false);
+    const text = document.querySelector(".ride-status-card-text");
+    const statuses = screen.getAllByRole("status");
+    expect(text).not.toBeNull();
+    expect(statuses.length).toBeGreaterThan(0);
+
+    show(true);
+    expect(screen.getByRole("button", { name: "Screen on" })).toBeInTheDocument();
+    expect(document.querySelector(".ride-status-card-text")).toBe(text);
+    for (const node of statuses) expect(node.isConnected).toBe(true);
+
+    show(false);
+    expect(screen.queryByRole("button", { name: "Screen on" })).not.toBeInTheDocument();
+    expect(document.querySelector(".ride-status-card-refusal-slot")).toBeNull();
+    expect(document.querySelector(".ride-status-card-text")).toBe(text);
+    for (const node of statuses) expect(node.isConnected).toBe(true);
   });
 });

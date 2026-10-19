@@ -172,3 +172,39 @@ describe("RidingWakeLockControl", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Screen staying awake.");
   });
 });
+
+describe("RidingWakeLockControl: the refusal row's container (backlog item 145)", () => {
+  it("renders no refusal row while its container is still null, then exactly one inside the container once given", async () => {
+    const fake = buildFakeWakeLockSource();
+    const props = {
+      desired: true,
+      onToggleDesired: vi.fn(),
+      wakeLockSource: fake.source,
+      clock: fixedClock,
+    };
+    const { rerender } = render(
+      <RidingWakeLockControl {...props} failureRowContainer={null} />,
+    );
+    await act(async () => {
+      fake.instances[0]?.rejectRequest(new Error("denied"));
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    try {
+      rerender(<RidingWakeLockControl {...props} failureRowContainer={container} />);
+      const alerts = screen.getAllByRole("alert");
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toHaveTextContent("The screen could not be kept awake.");
+      expect(container.contains(alerts[0] ?? null)).toBe(true);
+      expect(
+        alerts[0]?.closest(".ride-wake-lock-control"),
+        "the row renders outside the control's own element",
+      ).toBeNull();
+    } finally {
+      container.remove();
+    }
+  });
+});

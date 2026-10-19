@@ -310,7 +310,7 @@ test.describe("compact control on a narrow phone viewport", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test("the status label, remaining distance and GPS line form one left column, fully beside the Screen on button, which spans their combined height (item 82 follow-up)", async ({
+  test("the status label, remaining distance and GPS line form one left-aligned stack beside or beneath the compact Screen on button, which keeps its natural height (item 145, replacing item 82's full-height button)", async ({
     page,
     context,
   }) => {
@@ -371,25 +371,37 @@ test.describe("compact control on a narrow phone viewport", () => {
     expect(statusBox.y).toBeLessThan(remainingBox.y);
     expect(remainingBox.y).toBeLessThan(gpsBox.y);
 
-    // Every text row sits entirely to the left of the button. A layout
-    // where the button had wrapped onto its own line below the stack
-    // could still satisfy the gap/alignment checks above while failing
-    // this one, since the button's left edge would then sit at or left of
-    // the text rows instead of to their right.
+    // The status and remaining rows sit entirely to the left of the button.
+    // A layout where the button had wrapped onto its own line below the
+    // stack could still satisfy the gap/alignment checks above while
+    // failing this one, since the button's left edge would then sit at or
+    // left of the text rows instead of to their right.
     expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(toggleBox.x);
     expect(remainingBox.x + remainingBox.width).toBeLessThanOrEqual(toggleBox.x);
-    expect(gpsBox.x + gpsBox.width).toBeLessThanOrEqual(toggleBox.x);
+    // Since item 145 the GPS line may continue beneath the button: beside it
+    // or beneath it, never overlapping it.
+    const gpsBeside = gpsBox.x + gpsBox.width <= toggleBox.x;
+    const gpsBeneath = gpsBox.y >= toggleBox.y + toggleBox.height - 0.5;
+    expect(gpsBeside || gpsBeneath, "the GPS line beside or beneath Screen on").toBe(
+      true,
+    );
 
     // The button's top aligns with the status row's top...
     expect(Math.abs(toggleBox.y - statusBox.y)).toBeLessThanOrEqual(4);
-    // ...and its bottom reaches at least the GPS line's bottom — checked
-    // against the GPS line's bottom, not merely its top, since a button
-    // that had wrapped onto its own line below the whole stack could
-    // still have a bottom past the GPS line's top without genuinely
-    // spanning the stack's full height.
-    expect(toggleBox.y + toggleBox.height).toBeGreaterThanOrEqual(
-      gpsBox.y + gpsBox.height - 4,
+    // ...and, replacing item 82's full-height button, it keeps its natural
+    // height: at least the 44 px minimum, its label and state wholly inside
+    // it, and no taller than they need with 2.5 px of vertical padding and
+    // its 1 px borders.
+    const labelBox = await toggle.locator(".wake-lock-toggle-label").boundingBox();
+    const stateBox = await toggle.locator(".wake-lock-toggle-state").boundingBox();
+    if (!labelBox || !stateBox) throw new Error("expected Screen on's label and state");
+    expect(toggleBox.height).toBeGreaterThanOrEqual(44 - 0.01);
+    expect(labelBox.y).toBeGreaterThanOrEqual(toggleBox.y);
+    expect(stateBox.y + stateBox.height).toBeLessThanOrEqual(
+      toggleBox.y + toggleBox.height,
     );
+    const content = stateBox.y + stateBox.height - labelBox.y;
+    expect(toggleBox.height).toBeLessThanOrEqual(Math.max(44, content + 2 * 2.5 + 2) + 1);
 
     expect(unexpectedOpenFreeMapRequests).toEqual([]);
     expect(consoleErrors).toEqual([]);

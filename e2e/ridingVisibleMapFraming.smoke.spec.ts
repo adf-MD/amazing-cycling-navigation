@@ -22,7 +22,14 @@ import { readActiveRideStateRow } from "./support/rideStateDb.ts";
 //   18rem boundary one map pixel either side;
 // - camera intent: a completed pan made while a framing renewal is pending,
 //   and an anchored zoom followed by North-up, each surviving later layout
-//   changes.
+//   changes;
+// - item 145's wrap-under slice (0.4.73), English and German 320x693: a
+//   minute-old ±25 m fix with a location error, then a failed End. The GPS
+//   line sits on one line beneath Screen on, using the width there; with
+//   Screen on made 48 px tall (an inline style, measurement only) it stays
+//   one line beneath and the card grows by no more than the button; and the
+//   rider stays whole. The map controls are absent by policy in a location
+//   error, so they are recorded as absent, never as activated.
 //
 // Evidence is kept separate: geometry (boxes, the visible region through
 // clipping ancestors, canvas against visible height), the current projection
@@ -35,7 +42,11 @@ import { readActiveRideStateRow } from "./support/rideStateDb.ts";
 // followFramingController.test.ts owns the timing contract, followFraming.test.ts
 // the geometry. Overlap: ridingClimbView.spec.ts (Chromium) keeps item 115's
 // placement contracts; ridingRefusedScreenOn.smoke.spec.ts the refused card.
-// The refusal and the failed End are simulated; nothing here is
+// The refusal, the location error and the failed End are simulated, and the
+// minute-old age comes from an opt-in Date.now offset with each delivered
+// fix stamped by the page's own clock (Playwright's WebKit emulation stamps
+// positions on another scale), so both engines age alike while timers,
+// animation frames and performance.now stay real. Nothing here is
 // installed-iPhone evidence, and the CI image's fonts are not iOS fonts.
 
 test.use({ serviceWorkers: "block" });
@@ -249,9 +260,9 @@ async function makeRouteTrusted(page: Page, language: Language): Promise<void> {
  * script runs before it), a wake-lock stub whose next request fails while
  * window.__e2eScreenOnRefuse is true, and a capture-phase record of the
  * button each click reaches. */
-async function installStubs(page: Page, size: Size): Promise<void> {
+async function installStubs(page: Page, size: Size, geolocation = false): Promise<void> {
   await page.addInitScript(
-    ({ top, bottom }) => {
+    ({ top, bottom, geolocation }) => {
       const apply = (html: Element) => {
         const style = (html as HTMLElement).style;
         style.setProperty("--safe-area-inset-top", `${String(top)}px`);
@@ -308,8 +319,59 @@ async function installStubs(page: Page, size: Size): Promise<void> {
           },
         },
       });
+      if (geolocation) {
+        // Opt-in (item 145's location-error case): a location-error hook on
+        // the app's watch, each fix stamped by the page's clock, and a
+        // Date.now offset; performance.now, timers and frames stay real.
+        const clock = window as unknown as {
+          __e2eClockOffsetMs: number;
+          __e2eLastFixAt: number;
+          __e2eGeoError: (code: number) => number;
+        };
+        const realNow = Date.now.bind(Date);
+        clock.__e2eClockOffsetMs = 0;
+        clock.__e2eLastFixAt = 0;
+        Date.now = () => realNow() + clock.__e2eClockOffsetMs;
+        const errorCallbacks = new Map<number, PositionErrorCallback>();
+        const geo = navigator.geolocation;
+        const watch = geo.watchPosition.bind(geo);
+        const clearWatch = geo.clearWatch.bind(geo);
+        geo.watchPosition = (onFix, onError, options) => {
+          const id = watch(
+            (position) => {
+              clock.__e2eLastFixAt = Date.now();
+              const timestamp = clock.__e2eLastFixAt;
+              const stamped: GeolocationPosition = {
+                coords: position.coords,
+                timestamp,
+                toJSON: () => ({ coords: position.coords, timestamp }),
+              };
+              onFix(stamped);
+            },
+            onError,
+            options,
+          );
+          if (onError) errorCallbacks.set(id, onError);
+          return id;
+        };
+        geo.clearWatch = (id) => {
+          errorCallbacks.delete(id);
+          clearWatch(id);
+        };
+        clock.__e2eGeoError = (code) => {
+          const error: GeolocationPositionError = {
+            code,
+            message: "e2e",
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          };
+          for (const callback of errorCallbacks.values()) callback(error);
+          return errorCallbacks.size;
+        };
+      }
     },
-    { top: size.top, bottom: size.bottom },
+    { top: size.top, bottom: size.bottom, geolocation },
   );
 }
 
@@ -831,10 +893,11 @@ async function startRide(
   size: Size,
   kind: Kind,
   language: Language,
+  geolocation = false,
 ): Promise<Ride> {
   const copy = COPY[language];
   await page.setViewportSize({ width: size.width, height: size.height });
-  await installStubs(page, size);
+  await installStubs(page, size, geolocation);
   await context.grantPermissions(["geolocation"]);
   await context.setGeolocation(
     kind === "climb"
@@ -935,6 +998,115 @@ async function failEnd(ride: Ride): Promise<void> {
   await expect(
     ride.page.getByRole("alert").filter({ hasText: COPY[ride.language].endFailed }),
   ).toBeVisible();
+}
+
+/** Item 145: the app's own minute-old ±25 m GPS line (no-break spaces as \s). */
+const STALE_MINUTE = {
+  en: /^GPS ±25\sm · Stale \(1\smin ago\)$/,
+  de: /^GPS ±25\sm · Veraltet \(vor 1\smin\)$/,
+} as const;
+
+/** Item 145: the last fix made `ageMs` old through the opt-in Date.now offset
+ * (installStubs' geolocation extra); only Date.now moves. */
+async function ageLastFix(page: Page, ageMs: number): Promise<void> {
+  await page.evaluate((age) => {
+    const clock = window as unknown as {
+      __e2eClockOffsetMs: number;
+      __e2eLastFixAt: number;
+    };
+    const real = Date.now() - clock.__e2eClockOffsetMs;
+    clock.__e2eClockOffsetMs = clock.__e2eLastFixAt + age - real;
+  }, ageMs);
+}
+
+interface StatusFlow {
+  toggle: Rect;
+  card: Rect;
+  /** Route riding's GPS line, one rect per visual line. */
+  gps: Rect[];
+  /** Every fragment of visible text in the status text. */
+  text: Rect[];
+}
+
+/** Item 145: Screen on, the card, the GPS line by visual line and the visible
+ * text. With `minHeightPx`, Screen on's min-height is also set inline for one
+ * synchronous reading (measurement only) and then removed again. */
+async function statusFlow(
+  page: Page,
+  minHeightPx?: number,
+): Promise<{
+  flow: StatusFlow;
+  stressed: StatusFlow | null;
+  restored: StatusFlow | null;
+}> {
+  const result = await page.evaluate((minHeight) => {
+    const card = document.querySelector(".ride-status-card");
+    const toggle = card?.querySelector<HTMLElement>(".wake-lock-toggle") ?? null;
+    const gps = card?.querySelector(".ride-status-card-gps") ?? null;
+    const text = card?.querySelector(".ride-status-card-text") ?? null;
+    if (!card || !toggle || !gps || !text) return null;
+    const box = (element: Element) => {
+      const b = element.getBoundingClientRect();
+      return { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+    };
+    const fragments = (element: Element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return [...range.getClientRects()]
+        .filter((r) => r.width > 0)
+        .map((r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom }));
+    };
+    const read = () => {
+      const parts = fragments(gps);
+      const tops = [...new Set(parts.map((r) => Math.round(r.top)))].sort(
+        (x, y) => x - y,
+      );
+      const lines = tops.map((top) => {
+        const same = parts.filter((r) => Math.round(r.top) === top);
+        return {
+          left: Math.min(...same.map((r) => r.left)),
+          top: Math.min(...same.map((r) => r.top)),
+          right: Math.max(...same.map((r) => r.right)),
+          bottom: Math.max(...same.map((r) => r.bottom)),
+        };
+      });
+      return { toggle: box(toggle), card: box(card), gps: lines, text: fragments(text) };
+    };
+    const flow = read();
+    if (minHeight === null) return { flow, stressed: null, restored: null };
+    toggle.style.setProperty("min-height", `${String(minHeight)}px`);
+    const stressed = read();
+    toggle.style.removeProperty("min-height");
+    return { flow, stressed, restored: read() };
+  }, minHeightPx ?? null);
+  if (!result) throw new Error("expected the status card, Screen on and the GPS line");
+  return result;
+}
+
+/** Item 145: the GPS line on one line, starting beneath Screen on and running
+ * into the width beneath it, with no visible text overlapping the button. */
+function expectGpsBeneath(flow: StatusFlow, label: string): void {
+  expect(flow.gps, `${label}: the GPS line on one line`).toHaveLength(1);
+  // toHaveLength above has already failed the test if there is no line.
+  const line = flow.gps[0];
+  const { toggle } = flow;
+  expect(line.top, `${label}: the GPS line beneath Screen on`).toBeGreaterThanOrEqual(
+    toggle.bottom - TOLERANCE_PX,
+  );
+  expect(
+    line.right,
+    `${label}: the GPS line using the width beneath Screen on`,
+  ).toBeGreaterThan(toggle.left);
+  for (const r of flow.text) {
+    const overlaps =
+      r.right > toggle.left + TOLERANCE_PX &&
+      r.left < toggle.right - TOLERANCE_PX &&
+      r.bottom > toggle.top + TOLERANCE_PX &&
+      r.top < toggle.bottom - TOLERANCE_PX;
+    expect(overlaps, `${label}: text ${JSON.stringify(r)} clear of Screen on`).toBe(
+      false,
+    );
+  }
 }
 
 const followButton = (page: Page) =>
@@ -1294,4 +1466,76 @@ test.describe("rider visibility in the visible map (item 145)", () => {
     });
     await expect(followButton(page)).toHaveAttribute("aria-pressed", "false");
   });
+});
+
+test.describe("the GPS line beneath Screen on (item 145's wrap-under slice)", () => {
+  for (const language of ["en", "de"] as const) {
+    test(`320x693, ${language}: a minute-old ±25 m location error and a failed End keep the GPS line on one line beneath Screen on, also with a taller button, and the rider whole`, async ({
+      page,
+      context,
+    }) => {
+      const ride = await startRide(page, context, SIZE_320, "route", language, true);
+      const gpsLine = page.locator(".ride-status-card .ride-status-card-gps");
+
+      // A ±25 m fix at the imminent turn, then a location error, with the last
+      // fix made a minute old: the app's own formatting.
+      const camera = await readCamera(page);
+      await context.setGeolocation({
+        latitude: ROUTE_LAT,
+        longitude: lonAtMetres(740),
+        accuracy: 25,
+      });
+      await expect
+        .poll(async () => (await readCamera(page)).center)
+        .not.toBe(camera.center);
+      await expect(gpsLine).toHaveText(/^GPS ±25\sm · /);
+      await page.evaluate(() =>
+        (window as unknown as { __e2eGeoError: (code: number) => number }).__e2eGeoError(
+          2,
+        ),
+      );
+      await expect(page.locator(".ride-status-card-error-row")).toBeVisible();
+      await ageLastFix(page, 65_000);
+      await expect(gpsLine).toHaveText(STALE_MINUTE[language]);
+
+      const located = await noFix(ride);
+      const settled = await statusFlow(page, 48);
+      expectGpsBeneath(settled.flow, `${language}: location error`);
+      expectRiderWhole(located, `${language}: location error`, CLEARANCE_PX);
+
+      // Measurement only: with Screen on 48 px tall, the GPS line still starts
+      // beneath it on one line, and the card grows by no more than the button.
+      const { stressed, restored } = settled;
+      if (!stressed || !restored) throw new Error("expected the stressed readings");
+      expect(stressed.toggle.bottom - stressed.toggle.top).toBeCloseTo(48, 1);
+      expectGpsBeneath(stressed, `${language}: Screen on 48 px tall`);
+      const grown = 48 - (settled.flow.toggle.bottom - settled.flow.toggle.top);
+      expect(stressed.card.bottom - settled.flow.card.bottom).toBeLessThanOrEqual(
+        grown + TOLERANCE_PX,
+      );
+      expect(restored.card).toEqual(settled.flow.card);
+
+      // A failed End ride: the error row adds to the header, the GPS line keeps
+      // its place, and the rider stays whole.
+      await failEnd(ride);
+      const ended = await noFix(ride);
+      expectGpsBeneath((await statusFlow(page)).flow, `${language}: failed End`);
+      expectRiderWhole(ended, `${language}: failed End`, CLEARANCE_PX);
+      await expectRiderPainted(page, ended, `${language}: failed End`);
+      expectOperable(ended, `${language}: failed End`, false);
+      expect(
+        ended.controls,
+        "the map controls are absent by policy in a location error",
+      ).toEqual([]);
+
+      // Activation, after the geometry: Screen on, then the location retry.
+      const toggle = page.locator(".ride-status-card .wake-lock-toggle");
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-pressed", "true");
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-pressed", "false");
+      await page.locator(".ride-status-card-error-row button").click();
+      await expect(page.locator(".ride-status-card-error-row")).toHaveCount(0);
+    });
+  }
 });
